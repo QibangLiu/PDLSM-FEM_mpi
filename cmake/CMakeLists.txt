@@ -43,4 +43,4 @@ ${MKL_LIBRARIES}
 ${MPI_LIBRARIES}
 )
 #===set complie options=====================
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lgomp -lpthread -lm -ldl -DMKL_ILP64 -m64")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -lgomp -lpthread -lm -ldl -DMKL_ILP64 -m64")

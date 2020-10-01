@@ -15,6 +15,7 @@ public:
 	void getcoor(double x[])const;
 	double getvolume()const;
 	void addvolume(double dv);
+	void setVolume(double dv);
 	pdDof *op_getDof(int i)const;
 	void print(ofstream &fout);
 	void printStress(ofstream &fout);

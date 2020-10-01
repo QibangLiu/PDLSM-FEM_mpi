@@ -16,9 +16,9 @@ public:
 	int getEleoB(int i);
 	int getNumEleoB()const;
 	void print(ofstream &fout);
+	vector<int>cv_Nodeid;//for store the MP id in this block;
+	vector<int>cv_eleID;
 private:
 	pdBlock();
 	int ci_ID; 	
-	vector<int>cv_Nodeid;//for store the MP id in this block;
-	vector<int>cv_eleID;
 };

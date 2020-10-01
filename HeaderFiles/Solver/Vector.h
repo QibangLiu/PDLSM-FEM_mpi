@@ -14,8 +14,6 @@ class Vector {
 public:
 	double* cdp_vecCoeff;		// Coefficients of the vector
 	int ci_vecRow;				// Number of rows
-	// never to be used copy constructor
-	Vector(const Vector& o_vector);
 public:
 	// Constructors
 	Vector();
@@ -36,5 +34,8 @@ public:
 	double d_getmol()const;
 	void print(ofstream &fout);	// print useful info
 	//void Vecmultiply(double value);//each component times value;
+private:
+	// never to be used copy constructor
+	Vector(const Vector& o_vector);
 };
 

@@ -7,8 +7,8 @@
 #
 
 find_path(MKL_INCLUDE_DIR mkl_dfti.h HINTS $ENV{MKLROOT}/include)
-find_path(FFTW_INCLUDE_DIR fftw.h HINTS $ENV{MKLROOT}/include/fftw)
-set(MKL_INCLUDE_DIR ${MKL_INCLUDE_DIR} ${FFTW_INCLUDE_DIR})
+#find_path(FFTW_INCLUDE_DIR fftw.h HINTS $ENV{MKLROOT}/include/fftw)
+set(MKL_INCLUDE_DIR ${MKL_INCLUDE_DIR})
 #message(STAUS "==${MKL_INCLUDE_DIR}")
 
 if(WIN32)

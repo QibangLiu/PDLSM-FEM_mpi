@@ -12,6 +12,7 @@ public:
 	void eleEquivNodalForce(Vector* Fe, double t, double xN[][3]);
 	double detJacobi(double xN[][3], double p, double q, double r);
 	void eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matrix* L, Vector* Ue, double xN[][3]);
+	double eleVolume(double xN[][3]);
 	void print_vtk(ofstream& fout, int* eleNodeID);
 private:
 	void vec_mNtN_NBC(Vector* mNtN, double xN[][3], double p, double q);

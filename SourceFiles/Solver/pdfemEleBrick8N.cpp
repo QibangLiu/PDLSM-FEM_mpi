@@ -222,6 +222,31 @@ void pdfemEleBrick8N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matr
 
 }
 
+double pdfemEleBrick8N::eleVolume(double xN[][3])
+{
+	double VolEle = 0;
+	double wp, wq, wr, detJ, p, q, r;
+	int nG = o_globGP.i_getNumPts();
+	for (int mp = 0; mp < nG; mp++)
+	{
+		wp = o_globGP.d_getWeight(mp);
+		p = o_globGP.d_getGaussPt(mp);
+		for (int mq = 0; mq < nG; mq++)
+		{
+			wq = o_globGP.d_getWeight(mq);
+			q = o_globGP.d_getGaussPt(mq);
+			for (int mr = 0; mr < nG; mr++)
+			{
+				wr = o_globGP.d_getWeight(mr);
+				r = o_globGP.d_getGaussPt(mr);
+				detJ = detJacobi(xN, p, q, r);
+				VolEle = VolEle + wp * wq * wr * detJ;
+			}
+		}
+	}
+	return VolEle;
+}
+
 void pdfemEleBrick8N::print_vtk(ofstream& fout, int* eleNodeID)
 {
 	switch (ci_eleType)
