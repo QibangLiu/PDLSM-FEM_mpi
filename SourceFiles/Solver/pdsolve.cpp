@@ -215,7 +215,7 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 		algoType = o_dat.op_getEles(k)->getAlgoType();
 		if (algoType == 1)
 		{
-			numNodeELE = o_dat.op_getEles(k)->getNumNodes();
+			numNodeELE = o_dat.op_getEles(k)->ci_numNodes;
 			conNID = new int[numNodeELE];
 			xN = new double[numNodeELE][3];
 			o_dat.op_getEles(k)->getConNid(conNID);
@@ -240,7 +240,7 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 			algoType = o_dat.op_getEles(k)->getAlgoType();
 			if (algoType == 2)
 			{
-				numNodeELE = o_dat.op_getEles(k)->getNumNodes();
+				numNodeELE = o_dat.op_getEles(k)->ci_numNodes;
 				conNID = new int[numNodeELE];
 				xN = new double[numNodeELE][3];
 				o_dat.op_getEles(k)->getConNid(conNID);

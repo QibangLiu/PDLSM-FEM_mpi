@@ -77,6 +77,11 @@ void pdfemEleLine2N::print_vtk(ofstream& fout, int* eleNodeID)
 	fout << 2<<' ' << eleNodeID[0] - 1 << ' ' << eleNodeID[1] - 1 << endl;
 }
 
+double pdfemEleLine2N::eleVolume(double xN[][3])
+{
+	return 0.0;
+}
+
 
 void pdfemEleLine2N::vec_mNtN_NBC(Vector* mNtN, double xN[][3], double p, double q)
 {

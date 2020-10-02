@@ -201,7 +201,7 @@ void fioFiles::writeResultsPD_vtk(datModel& o_dat)
 	count = 0;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType==1)
 		{
 			sizeList = sizeList + o_dat.op_getEles(i)->getNumNodes_vtk();
@@ -214,10 +214,10 @@ void fioFiles::writeResultsPD_vtk(datModel& o_dat)
 	int* mapEleNodeID, numNodeEle;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType==1)
 		{
-			numNodeEle = o_dat.op_getEles(i)->getNumNodes();
+			numNodeEle = o_dat.op_getEles(i)->ci_numNodes;
 			mapEleNodeID = new int[numNodeEle];
 			for (int ele = 0; ele < numNodeEle; ele++)
 			{
@@ -233,7 +233,7 @@ void fioFiles::writeResultsPD_vtk(datModel& o_dat)
 	fout << "CELL_TYPES " << count << endl;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType == 1)
 		{
 			fout << o_dat.op_getEles(i)->ci_eleType << endl;
@@ -313,7 +313,7 @@ void fioFiles::writeResultsFEM_vtk(datModel& o_dat)
 	count = 0;//count for number of fem element;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType == 2)
 		{
 			sizeList = sizeList + o_dat.op_getEles(i)->getNumNodes_vtk();
@@ -325,10 +325,10 @@ void fioFiles::writeResultsFEM_vtk(datModel& o_dat)
 	int* mapEleNodeID, numNodeEle;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType == 2)
 		{
-			numNodeEle = o_dat.op_getEles(i)->getAlgoType();
+			numNodeEle = o_dat.op_getEles(i)->ci_numNodes;
 			mapEleNodeID = new int[numNodeEle];
 			for (int ele = 0; ele < numNodeEle; ele++)
 			{
@@ -344,7 +344,7 @@ void fioFiles::writeResultsFEM_vtk(datModel& o_dat)
 	fout << "CELL_TYPES " << count << endl;
 	for (int i = 0; i < o_dat.getTotnumEle(); i++)
 	{
-		algoType = o_dat.op_getEles(i)->getAlgoType();
+		algoType = o_dat.op_getEles(i)->ci_algorithmType;
 		if (algoType == 2)
 		{
 			fout << o_dat.op_getEles(i)->ci_eleType << endl;

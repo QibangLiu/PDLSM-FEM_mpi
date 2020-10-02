@@ -3,13 +3,13 @@
 #include<fstream>
 //#include"pdSetsolve.h"
 #include"pdDof.h"
-#include "dataLev2.h"
+//#include"Vector.h"
 #include<iomanip>
 using namespace std;
 class pdNode
 {
 public:
-	pdNode(int id, dataLev2* op_datLev2);
+	pdNode(int id, double x[]);
 	~pdNode();
 	int getId()const;
 	void getcoor(double x[])const;
@@ -35,10 +35,9 @@ public:
 	void calAverageStress(int count);
 private:
 	pdNode();
-	dataLev2* cop_datLev2;
 	int ci_NodeId;//Node id;
 	double cd_dv;//volume ;
-	//double *cd_x;//coordinate
+	double cd_x[3];//coordinate
 	pdDof *cop_dof[3];
 	int ci_famID;
 	double cd_sigma[6];
