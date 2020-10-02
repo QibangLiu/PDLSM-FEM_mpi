@@ -34,19 +34,19 @@ public:
 	void matMathcalNt(Matrix* mNt, double p, double q);
 	void matN_trans(Matrix* Nmat, double xN[][3], double p, double q);
 	//functions for 2D===
-	void shapTens2D(Matrix* A, int famk, datModel& o_dat);
-	void vec_gd2D(double g[], double d[], Matrix* A, int famk, double xi[], datModel& o_dat);
-	void matG2D(Matrix* G, Matrix* A, int famk, int m, datModel& o_dat);
-	void matH2D(Matrix* H, int famk, datModel& o_dat);
-	void matC2D(Matrix* C, int famk, datModel& o_dat);
+	void shapTens2D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
+	void vec_gd2D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
+	void matG2D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
+	void matH2D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
+	void matC2D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
 	//functions for 3D====
-	void shapTens3D(Matrix* A, int famk, datModel& o_dat);
-	void vec_gd3D(double g[], double d[], Matrix* A, int famk, double xi[], datModel& o_dat);
-	void matG3D(Matrix* G, Matrix* A, int famk, int m, datModel& o_dat);
-	void matH3D(Matrix* H, int famk, datModel& o_dat);
-	void matC3D(Matrix* C, int famk, datModel& o_dat);
+	void shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
+	void vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
+	void matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
+	void matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
+	void matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
 	//functions for 2D && 3D====
-	double inflFunc(double xi[], int famk, datModel& o_dat);
+	double inflFunc(double xi[], pdFamily* p_fami, datModel& o_dat);
 	void assembleInterWorkPD(datModel& o_dat);
 	void assemblePDBEwork(datModel& o_dat);
 	void assembleMassMatPD(datModel& o_dat); //PD node mass;
@@ -127,8 +127,16 @@ private:
 	pdsolve();
 	//===MPI rank, number of processor;
 	int ci_rank, ci_numProce;
+
+	//============================================
+	//==============FLAGs ========================
 	//===solver;
 	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
+	// PD node on the interface, interact with node in fem domain or not
+	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	//=============END flags=========================
+	//============================================
+
 	//==material constants;
 	Matrix* cop_D;
 	double cd_lambda;

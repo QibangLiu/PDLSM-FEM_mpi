@@ -31,7 +31,7 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	datModel o_modeldata;
 	printf("Reading data on %d-th core of %d....\n", ci_rank, ci_numProce);
 	o_modeldata.readdata(fin);
-	pdsolve o_sol(o_modeldata,ci_rank,ci_numProce);
+	
 	//o_modeldata.writeData();
 	//===========solving===========================
 	double t1, t2;
@@ -40,11 +40,12 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 		cout << "PDLSM-FEM solving........." << endl;
 		t1= MPI_Wtime();
 	}	
+	pdsolve o_sol(o_modeldata, ci_rank, ci_numProce);
 	o_sol.pdfemStaticSolver_CSRformat(o_modeldata);
 	if (ci_rank==0)
 	{
 		double t2 = MPI_Wtime();
-		printf("Elapsed time of PDLSM-FEM mpi solving is %f\n", t2 - t1);
+		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", t2 - t1, argv[1]);
 		//===========post processing=====================
 		printf("writing results.......\n");
 		fioFiles o_files;
