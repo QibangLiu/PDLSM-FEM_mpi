@@ -2,6 +2,7 @@
 using namespace std;
 datModel::datModel()
 {
+	cop_datLev2 = new dataLev2();
 	cop_Gauss = new pdGaussPt*[2];
 	cop_Gauss[0] = new pdGaussPt(2);
 	cop_Gauss[1] = new pdGaussPt(5);
@@ -11,6 +12,7 @@ datModel::datModel()
 
 datModel::~datModel()
 {
+	delete cop_datLev2; cop_datLev2 = NULL;
 }
 
 void datModel::readdata(ifstream & fin)
@@ -42,29 +44,45 @@ void datModel::readdata(ifstream & fin)
 	
 	//read the material point data 
 	int Nid;
-	double x[3];
+	double *x;
 	fin >> ci_numNode >> ci_numEle;
 	cop2_Node = new pdNode*[ci_numNode];
+	cop_datLev2->cd_X = new double[int(3) * ci_numNode];
 	for (int i = 0; i < ci_numNode; i++)
 	{
-
+		x = &(cop_datLev2->cd_X[3 * i]);
 		fin >> Nid >> x[0] >> x[1] >> x[2];
 		//cout << id << ' ' << xvalue << endl;
-		cop2_Node[i] = new pdNode(Nid,x);
 	}
-
+	for (int i = 0; i < ci_numNode; i++)
+	{
+		cop2_Node[i] = new pdNode(i+1, cop_datLev2);
+	}
 	//====read the element data ==================
-	int Eid, eleNid[8], algoType;
-	cop2_Eles = new pdfemEles *[ci_numEle];
+	cop_datLev2->ci_ANN = new int[ci_numEle + 1];
+	cop_datLev2->ci_ANN[0] = 0;
 	for (int i = 0; i < ci_numEle; i++)
 	{
-		fin >> Eid >> algoType;
-		
+		cop_datLev2->ci_ANN[i + 1] = cop_datLev2->ci_ANN[i] + 8;
+	}
+	cop_datLev2->ci_eleAlgoType = new int[ci_numEle];
+	cop_datLev2->ci_eleNodeID = new int[8 * ci_numEle];//revised latter, only works for 8 node element;
+	
+	int Eid, * eleNid, poP;
+	for (int i = 0; i < ci_numEle; i++)
+	{
+		fin >> Eid >> cop_datLev2->ci_eleAlgoType[i];
+		poP = cop_datLev2->ci_ANN[i];
 		for (int j = 0; j < 8; j++)
 		{
 			fin >> eleNid[j];
 		}
-		cop2_Eles[i] = new pdfemEleBrick8N(Eid, eleNid,algoType);
+		
+	}
+	cop2_Eles = new pdfemEles *[ci_numEle];
+	for (int i = 0; i < ci_numEle; i++)
+	{
+		cop2_Eles[i] = new pdfemEleBrick8N(i+1, cop_datLev2);
 	}
 	//=============read PD boundary================
 	string s_blank;

@@ -1,18 +1,18 @@
 #include "pdNode.h"
 
 
-pdNode::pdNode(int id, double x[])
+pdNode::pdNode(int id, dataLev2 *op_datLev2)
 {
 	ci_NodeId = id;
+	cop_datLev2 = op_datLev2;
 	for (int i = 0; i < 3; i++)
 	{
-		cd_x[i] = x[i];
 		cop_dof[i] = new pdDof();
 	}
 	cd_dv = 0;
 	ci_nodeType = 0;
 	ci_famID = -1;
-	for (int i = 0; i < 3; i++)
+	for (int i = 0; i < 6; i++)
 	{
 		cd_sigma[i] = 0;
 	}
@@ -35,6 +35,7 @@ int pdNode::getId() const
 
 void pdNode::getcoor(double x[]) const
 {
+	double *cd_x = &(cop_datLev2->cd_X[3 * (ci_NodeId - 1)]);
 	for (int i = 0; i < 3; i++)
 	{
 		x[i] = cd_x[i];
@@ -60,6 +61,7 @@ pdDof * pdNode::op_getDof(int i) const
 
 void pdNode::print(ofstream & fout)
 {
+	double* cd_x = &(cop_datLev2->cd_X[3 * (ci_NodeId - 1)]);
 	fout << std::left << setiosflags(ios::scientific)
 		<< setprecision(5);
 	fout<< ci_NodeId << "\t" << cd_x[0]
@@ -68,6 +70,7 @@ void pdNode::print(ofstream & fout)
 
 void pdNode::printStress(ofstream & fout)
 {
+	double* cd_x = &(cop_datLev2->cd_X[3 * (ci_NodeId - 1)]);
 	fout << ci_NodeId << "\t";
 	fout <<  cd_x[0] << "\t" << cd_x[1] << "\t" << cd_x[2];
 	for (int i = 0; i < 6; i++)
@@ -88,6 +91,7 @@ void pdNode::printStressTensor_vtk(ofstream& fout)
 
 void pdNode::printFinalU(ofstream & PDout)
 {
+	double* cd_x = &(cop_datLev2->cd_X[3 * (ci_NodeId - 1)]);
 	PDout << std::left << setiosflags(ios::scientific)<< setprecision(4);
 	PDout<< ci_NodeId << "\t" << cd_x[0] << "\t" << cd_x[1]<<
 		"\t" << cd_x[2] << "\t";
@@ -98,6 +102,7 @@ void pdNode::printFinalU(ofstream & PDout)
 
 void pdNode::printDamage(ofstream & fout)
 {
+	double* cd_x = &(cop_datLev2->cd_X[3 * (ci_NodeId - 1)]);
 	fout << ci_NodeId;
 	fout << "\t" << cd_x[0] << "\t" << cd_x[1] << "\t" << cd_localDamage << endl;
 }

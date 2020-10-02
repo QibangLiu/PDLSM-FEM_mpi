@@ -19,6 +19,7 @@
 #include "pdGaussPt.h"
 #include "pdReactionForceNode.h"
 #include"pdfemEssentialBCs.h"
+#include"dataLev2.h"
 #include<vector>
 
 #define pi  3.141592653589793
@@ -76,7 +77,7 @@ public:
 	void allocaMemoryFami();
 
 
-	
+	dataLev2* cop_datLev2;
 	string cs_title;
 	int ci_Numdimen;
 	vector<int>civ_feID;// finite elements' ID;
