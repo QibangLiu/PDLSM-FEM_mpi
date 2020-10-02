@@ -528,7 +528,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 
 void pdsolve::setFEID_PDEID(datModel& o_dat)
 {
-	int totNumEle, algoType, numDime;
+	int totNumEle, algoType;
 	totNumEle = o_dat.getTotnumEle();
 	int startP, endP;
 	startP = ci_rank * totNumEle / ci_numProce;
