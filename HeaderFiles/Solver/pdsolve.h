@@ -7,7 +7,6 @@
 #include<cmath>
 #include <stdlib.h>
 #include <stdio.h>
-#include <limits>
 #include<mpi.h>
 #include<omp.h>
 #define pi  3.141592653589793
@@ -20,13 +19,13 @@ public:
 	
 	//====data model setting=============================================
 	void setDatModel(datModel& o_dat); // set the data model, must be called before solving;
-	void setFEID_PDEID(datModel& o_dat);//set the FE id and PDE id for each cores;
 	void findDomainDimen(datModel &o_dat);// get the domain dimension size;
 	void setPDNODEandnumFami(datModel& o_dat);// set the node type and memory allocate for family;
 	void Setdof_Index(datModel& o_dat);//set each dof's equation position;
 	void calVolumeOfNode(datModel& o_dat);// calculate volume of pd node;
 	void setDeltaMaxMin(datModel& o_dat);// find out the max and min Delta;
 	void setBlockAndFami(datModel& o_dat);// initialize block;
+	void setFEID(datModel& o_dat);
 	//============PD algorithem===============================================;
 	//====some auxiliary functions
 	long long int findCSRIndexOfMat(int rowIndex, int colIndex);
@@ -35,19 +34,19 @@ public:
 	void matMathcalNt(Matrix* mNt, double p, double q);
 	void matN_trans(Matrix* Nmat, double xN[][3], double p, double q);
 	//functions for 2D===
-	void shapTens2D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
-	void vec_gd2D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
-	void matG2D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
-	void matH2D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
-	void matC2D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
+	void shapTens2D(Matrix* A, int famk, datModel& o_dat);
+	void vec_gd2D(double g[], double d[], Matrix* A, int famk, double xi[], datModel& o_dat);
+	void matG2D(Matrix* G, Matrix* A, int famk, int m, datModel& o_dat);
+	void matH2D(Matrix* H, int famk, datModel& o_dat);
+	void matC2D(Matrix* C, int famk, datModel& o_dat);
 	//functions for 3D====
-	void shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
-	void vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
-	void matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
-	void matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
-	void matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
+	void shapTens3D(Matrix* A, int famk, datModel& o_dat);
+	void vec_gd3D(double g[], double d[], Matrix* A, int famk, double xi[], datModel& o_dat);
+	void matG3D(Matrix* G, Matrix* A, int famk, int m, datModel& o_dat);
+	void matH3D(Matrix* H, int famk, datModel& o_dat);
+	void matC3D(Matrix* C, int famk, datModel& o_dat);
 	//functions for 2D && 3D====
-	double inflFunc(double xi[], pdFamily* p_fami, datModel& o_dat);
+	double inflFunc(double xi[], int famk, datModel& o_dat);
 	void assembleInterWorkPD(datModel& o_dat);
 	void assemblePDBEwork(datModel& o_dat);
 	void assembleMassMatPD(datModel& o_dat); //PD node mass;
@@ -128,14 +127,8 @@ private:
 	pdsolve();
 	//===MPI rank, number of processor;
 	int ci_rank, ci_numProce;
-	//============================================
-	//==============FLAGs ========================
 	//===solver;
 	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
-	// PD node on the interface, interact with node in fem domain or not
-	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
-	//=============END flags=========================
-	//============================================
 	//==material constants;
 	Matrix* cop_D;
 	double cd_lambda;

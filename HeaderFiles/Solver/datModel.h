@@ -79,9 +79,7 @@ public:
 	
 	string cs_title;
 	int ci_Numdimen;
-	vector<int>civ_feID;// finite elements' ID of each core;
-	vector<int>civ_pdeID;//PD elements' ID of each core
-	vector<int>civ_pdNodeID;// PD node ID of each core
+	vector<int>civ_feID;// finite elements' ID;
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;

@@ -11,9 +11,8 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	cop_M = NULL;
 	cop_Ku = NULL; cop_F = NULL;
 	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_Ku = NULL, cdp_Ug = NULL, cdp_M = NULL;
-	//=====initial flages;
+	
 	ci_solvFlag = -1;
-	ci_PDBN_ITA_flag = 0;
 	//===set data model ==================================
 	setDatModel(o_dat);
 	//============================D matrix=================
@@ -85,151 +84,97 @@ pdsolve::~pdsolve()
 
 void pdsolve::setDatModel(datModel& o_dat)
 {
-	setFEID_PDEID(o_dat);
 	findDomainDimen(o_dat);
 	setPDNODEandnumFami(o_dat);
 	Setdof_Index(o_dat);
 	calVolumeOfNode(o_dat);
 	setDeltaMaxMin(o_dat);
 	setBlockAndFami(o_dat);
+	setFEID(o_dat);
 }
 
 void pdsolve::findDomainDimen(datModel& o_dat)
 {
-	double  d_x[3];
-	double lbcGlo[3], rtcGlo[3], ompShar_lbc[3], ompShar_rtc[3];
-	int numNode, startP, endP;
-	numNode = o_dat.getTotnumNode();
-	startP = ci_rank * numNode / ci_numProce;
-	endP = (ci_rank + 1) * numNode / ci_numProce;
-	
-	o_dat.op_getNode(startP)->getcoor(ompShar_lbc);
-	o_dat.op_getNode(startP)->getcoor(ompShar_rtc);
-//#pragma omp parallel
+	double lbc[3], rtc[3], d_x[3];
+	o_dat.op_getNode(0)->getcoor(lbc);
+	o_dat.op_getNode(0)->getcoor(rtc);
+	for (int i = 1; i < o_dat.getTotnumNode(); i++)
 	{
-		double lbc[3], rtc[3];
-		o_dat.op_getNode(startP)->getcoor(lbc);
-		o_dat.op_getNode(startP)->getcoor(rtc);
-//#pragma omp for nowait
-		for (int i = startP + 1; i < endP; i++)
+		o_dat.op_getNode(i)->getcoor(d_x);
+		for (int j = 0; j < 3; j++)
 		{
-			o_dat.op_getNode(i)->getcoor(d_x);
-			for (int j = 0; j < 3; j++)
+			if (d_x[j] < lbc[j])
 			{
-				if (d_x[j] < lbc[j])
-				{
-					lbc[j] = d_x[j];
-				}
-				if (d_x[j] > rtc[j])
-				{
-					rtc[j] = d_x[j];
-				}
+				lbc[j] = d_x[j];
 			}
-		}
-//#pragma omp cratical
-		{
-			for (int j = 0; j < 3; j++)
+			if (d_x[j] > rtc[j])
 			{
-				ompShar_lbc[j] = std::min(ompShar_lbc[j], lbc[j]);
-				ompShar_rtc[j] = std::max(ompShar_rtc[j], rtc[j]);
+				rtc[j] = d_x[j];
 			}
 		}
 	}
-	MPI_Reduce(&ompShar_lbc[0],&lbcGlo[0], 3, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
-	MPI_Reduce(&ompShar_rtc[0], &rtcGlo[0], 3, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-	if (ci_rank==0)
+	for (int i = 0; i < 3; i++)
 	{
-		for (int i = 0; i < 3; i++)
-		{
-			lbcGlo[i] = lbcGlo[i] - 1.0E-14 * abs(lbcGlo[i]);
-			rtcGlo[i] = rtcGlo[i] + 1.0E-14 * abs(rtcGlo[i]);
-		}
+		lbc[i] = lbc[i] - 1.0E-14 * abs(lbc[i]);
+		rtc[i] = rtc[i] + 1.0E-14 * abs(rtc[i]);
 	}
-	MPI_Bcast(&lbcGlo[0], 3, MPI_DOUBLE, 0,MPI_COMM_WORLD);
-	MPI_Bcast(&rtcGlo[0], 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	o_dat.op_getGeomP()->setLBC(lbcGlo);
-	o_dat.op_getGeomP()->setRTC(rtcGlo);
+	o_dat.op_getGeomP()->setLBC(lbc);
+	o_dat.op_getGeomP()->setRTC(rtc);
 }
 
 void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 {
-//#pragma omp parallel
+	int algoType, * conNID, numNele;
+	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
 	{
-		int algoType, * conNID, numNele;
-		//set pure pd node as 2;
-//#pragma omp for
-		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+		algoType = o_dat.op_getEles(ele)->getAlgoType();
+		numNele = o_dat.op_getEles(ele)->getNumNodes();
+		if (algoType == 1)
 		{
-			algoType = o_dat.op_getEles(ele)->getAlgoType();
-			numNele = o_dat.op_getEles(ele)->getNumNodes();
-			if (algoType == 1)
+			conNID = new int[numNele];
+			o_dat.op_getEles(ele)->getConNid(conNID);
+			for (int i = 0; i < numNele; i++)
 			{
-				conNID = new int[numNele];
-				o_dat.op_getEles(ele)->getConNid(conNID);
-				for (int i = 0; i < numNele; i++)
-				{
-					o_dat.op_getNode(conNID[i] - 1)->setNodeType(2);
-				}
-				delete[] conNID; conNID = NULL;
+				o_dat.op_getNode(conNID[i] - 1)->setNodeType(2);
 			}
+			delete[] conNID; conNID = NULL;
 		}
-		//set pure fem node as 0 and interface node as 1;
-//#pragma omp for
-		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+	}
+	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+	{
+		algoType = o_dat.op_getEles(ele)->getAlgoType();
+		numNele = o_dat.op_getEles(ele)->getNumNodes();
+		if (algoType == 2)
 		{
-			algoType = o_dat.op_getEles(ele)->getAlgoType();
-			numNele = o_dat.op_getEles(ele)->getNumNodes();
-			if (algoType == 2)
+			conNID = new int[numNele];
+			o_dat.op_getEles(ele)->getConNid(conNID);
+			for (int i = 0; i < numNele; i++)
 			{
-				conNID = new int[numNele];
-				o_dat.op_getEles(ele)->getConNid(conNID);
-				for (int i = 0; i < numNele; i++)
+				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType()==2)
 				{
-					if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 2)
-					{
-						o_dat.op_getNode(conNID[i] - 1)->setNodeType(1);
-					}
+					o_dat.op_getNode(conNID[i] - 1)->setNodeType(1);
+				}
+				
+			}
+			delete[] conNID; conNID = NULL;
+		}
+	}
 
-				}
-				delete[] conNID; conNID = NULL;
-			}
-		}
-	}
-	//get number of family and allocate memory;
-	int numNode, startP, endP;
-	numNode = o_dat.getTotnumNode();
-	startP = ci_rank * numNode / ci_numProce;
-	endP = (ci_rank + 1) * numNode / ci_numProce;
-	int numFami = 0, numFamiGlo = 0;
-//#pragma omp parallel 
+
+	int numFami = 0;
+	for (int k = 0; k < o_dat.getTotnumNode(); k++)
 	{
-		vector<int>v_pdNID;
-//#pragma omp for reduction(+:numFami) schedule(dynamic)
-		for (int k = startP; k < endP; k++)
+		if (o_dat.op_getNode(k)->getNodeType())
 		{
-			if (o_dat.op_getNode(k)->getNodeType())
-			{
-				numFami = numFami + 1;
-				v_pdNID.push_back(k + 1);
-			}
-		}
-//#pragma omp critical
-		{
-			for (int i = 0; i < v_pdNID.size(); i++)
-			{
-				o_dat.civ_pdNodeID.push_back(v_pdNID[i]);
-			}
+			numFami = numFami + 1;
 		}
 	}
-	MPI_Reduce(&numFami, &numFamiGlo, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-	MPI_Bcast(&numFamiGlo, 1, MPI_INT, 0, MPI_COMM_WORLD);
-	o_dat.SetNumFamilies(numFamiGlo);
+	o_dat.SetNumFamilies(numFami);
 	o_dat.allocaMemoryFami();
 }
 
 void pdsolve::Setdof_Index(datModel& o_dat)
 {
-	// dependent previous results, can not be parallized;
 	int countEq, numDimen;
 	numDimen = o_dat.ci_Numdimen;
 	countEq = 0;
@@ -253,131 +198,147 @@ void pdsolve::Setdof_Index(datModel& o_dat)
 
 void pdsolve::calVolumeOfNode(datModel& o_dat)
 {
-	//====initiallize;
-	int numNode = o_dat.getTotnumNode();
-	double* loc_V = new double[numNode];
-	double *glo_V = new double[numNode];
-//#pragma omp parallel for
-	for (int i = 0; i < numNode; i++)
+	if (o_dat.ci_Numdimen == 2) //2D
 	{
-		loc_V[i] = 0;
-		glo_V[i] = 0;
-	}
-	//========================calculation volume=============
-	int* conNID, numNodeELE;
-	double(*xN)[3],  VolEle;
-	// be caution, each cores MPI parallel here;
-	for (int kk = 0; kk < o_dat.civ_pdeID.size(); kk++)
-	{
-		int eleInd = o_dat.civ_pdeID[kk] - 1;
-		numNodeELE = o_dat.op_getEles(eleInd)->ci_numNodes;
-		conNID = new int[numNodeELE];
-		xN = new double[numNodeELE][3];
-		o_dat.op_getEles(eleInd)->getConNid(conNID);
-		for (int i = 0; i < numNodeELE; i++)
+		// calculate volume for each node;
+		int conNID[4], algoType;
+		double xN[4][3], xMid[4][3], xC[3], N[4], dv;
+		double vec1[3], vec2[3];
+		for (int k = 0; k < o_dat.getTotnumEle(); k++)
 		{
-			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-		}
-		//Gauss integration to get element volumn
-		VolEle = o_dat.op_getEles(eleInd)->eleVolume(xN);
-		for (int i = 0; i < numNodeELE; i++)
-		{
-			//o_dat.op_getNode(conNID[i]-1)->addvolume(VolEle / 8.0);
-			loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
-		}
-		delete[] conNID, xN;
-		conNID = NULL, xN = NULL;
-	}
-	if (ci_PDBN_ITA_flag)    
-	{
-		// be caution, each cores MPI parallel here;
-		// calculte pure fem node volume;
-		for (int kk = 0; kk < o_dat.civ_feID.size(); kk++)
-		{
-			int eleInd = o_dat.civ_feID[kk] - 1;
-			numNodeELE = o_dat.op_getEles(eleInd)->ci_numNodes;
-			conNID = new int[numNodeELE];
-			xN = new double[numNodeELE][3];
-			o_dat.op_getEles(eleInd)->getConNid(conNID);
-			for (int i = 0; i < numNodeELE; i++)
+			algoType = o_dat.op_getEles(k)->getAlgoType();
+			if (algoType == 1)
 			{
-				o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-			}
-			//Gauss integration to get element volumn
-			VolEle = o_dat.op_getEles(eleInd)->eleVolume(xN);
-			for (int i = 0; i < numNodeELE; i++)
-			{
-				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType()==0)
+				o_dat.op_getEles(k)->getConNid(conNID);
+				o_dat.op_getEles(k)->shapeFunction(N, 0, 0, 0);
+				xC[0] = 0;
+				xC[1] = 0;
+				for (int i = 0; i < 4; i++)
 				{
-					//only for pure fem node;
-					loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
+					o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+					for (int j = 0; j < 2; j++)
+					{
+						xC[j] = xC[j] + N[i] * xN[i][j];
+					}
 				}
-					
+				for (int i = 0; i < 2; i++)
+				{
+					xMid[0][i] = (xN[0][i] + xN[1][i]) * 0.5;
+					xMid[1][i] = (xN[1][i] + xN[2][i]) * 0.5;
+					xMid[2][i] = (xN[2][i] + xN[3][i]) * 0.5;
+					xMid[3][i] = (xN[3][i] + xN[0][i]) * 0.5;
+
+				}
+				// node 0;
+				for (int i = 0; i < 2; i++)
+				{
+					vec1[i] = xC[i] - xN[0][i];
+					vec2[i] = xMid[3][i] - xMid[0][i];
+				}
+				dv = calArea(vec1, vec2);
+				o_dat.op_getNode(conNID[0] - 1)->addvolume(dv);
+				// node 1;
+				for (int i = 0; i < 2; i++)
+				{
+					vec1[i] = xC[i] - xN[1][i];
+					vec2[i] = xMid[1][i] - xMid[0][i];
+				}
+				dv = calArea(vec1, vec2);
+				o_dat.op_getNode(conNID[1] - 1)->addvolume(dv);
+				// node 2;
+				for (int i = 0; i < 2; i++)
+				{
+					vec1[i] = xC[i] - xN[2][i];
+					vec2[i] = xMid[1][i] - xMid[2][i];
+				}
+				dv = calArea(vec1, vec2);
+				o_dat.op_getNode(conNID[2] - 1)->addvolume(dv);
+				// node 3;
+				for (int i = 0; i < 2; i++)
+				{
+					vec1[i] = xC[i] - xN[3][i];
+					vec2[i] = xMid[3][i] - xMid[2][i];
+				}
+				dv = calArea(vec1, vec2);
+				o_dat.op_getNode(conNID[3] - 1)->addvolume(dv);
 			}
-			delete[] conNID, xN;
-			conNID = NULL, xN = NULL;
 		}
 	}
-	MPI_Reduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-	MPI_Bcast(glo_V, numNode, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-//#pragma omp	parallel for
-	for (int i = 0; i < numNode; i++)
+	else if (o_dat.ci_Numdimen == 3)//3D
 	{
-		o_dat.op_getNode(i)->setVolume(glo_V[i]);
+		int conNID[8], algoType, nG;
+		double xN[8][3], wp, wq, wr, detJ, p, q, r, VolEle;
+		nG = o_globGP.i_getNumPts();
+		for (int k = 0; k < o_dat.getTotnumEle(); k++)
+		{
+			algoType = o_dat.op_getEles(k)->getAlgoType();
+			if (algoType == 1)
+			{
+				o_dat.op_getEles(k)->getConNid(conNID);
+				for (int i = 0; i < 8; i++)
+				{
+					o_dat.op_getNode(conNID[i]-1)->getcoor(xN[i]);
+				}
+				//Gauss integration to get element volumn
+				VolEle = 0;
+				for (int mp = 0; mp < nG; mp++)
+				{
+					wp = o_globGP.d_getWeight(mp);
+					p = o_globGP.d_getGaussPt(mp);
+					for (int mq = 0; mq < nG; mq++)
+					{
+						wq = o_globGP.d_getWeight(mq);
+						q = o_globGP.d_getGaussPt(mq);
+						for (int mr = 0; mr < nG; mr++)
+						{
+							wr = o_globGP.d_getWeight(mr);
+							r = o_globGP.d_getGaussPt(mr);
+							detJ = o_dat.op_getEles(k)->detJacobi(xN, p, q, r);
+							VolEle = VolEle + wp * wq * wr * detJ;
+						}
+					}
+				}
+				for (int i = 0; i < 8; i++)
+				{
+					o_dat.op_getNode(conNID[i]-1)->addvolume(VolEle / 8.0);
+				}
+			}
+		}
 	}
-	delete[] loc_V, glo_V;
-	loc_V = NULL; glo_V = NULL;
 }
 
 void pdsolve::setDeltaMaxMin(datModel& o_dat)
 {
+	double volume_max=0, volume_min=0, dv, minDelta, maxDelta;
 	//====initialize==
-	double dv, minDelta, maxDelta, gloVmax, gloVmin;
-	double ompSharVmax = -(numeric_limits<double>::max());
-	double ompSharVmin = numeric_limits<double>::max();
-	gloVmax = ompSharVmax;
-	gloVmin = ompSharVmin;
-	
-	int numNode, startP, endP;
-	numNode = o_dat.getTotnumNode();
-	startP = ci_rank * numNode / ci_numProce;
-	endP = (ci_rank + 1) * numNode / ci_numProce;
-	//======find out max min volumn;
-//#pragma omp parallel 
+	for (int i = 0; i < o_dat.getTotnumNode(); i++)
 	{
-		double volume_max = ompSharVmax, volume_min = ompSharVmin;
-//#pragma omp for schedule(dynamic) 
-		for (int i = startP; i < endP; i++)
+		if (o_dat.op_getNode(i)->getNodeType())
 		{
-			if (o_dat.op_getNode(i)->getNodeType())
+			volume_max = o_dat.op_getNode(i)->getvolume();
+			volume_min = o_dat.op_getNode(i)->getvolume();
+			break;
+		}
+	}
+	//======find out max min volumn;
+	for (int i = 0; i < o_dat.getTotnumNode(); i++)
+	{
+		if (o_dat.op_getNode(i)->getNodeType())
+		{
+			dv = o_dat.op_getNode(i)->getvolume();
+			if (dv > volume_max)
 			{
-				dv = o_dat.op_getNode(i)->getvolume();
-				if (dv > volume_max)
-				{
-					volume_max = dv;
-				}
-				if (dv < volume_min)
-				{
-					volume_min = dv;
-				}
+				volume_max = dv;
+			}
+			if (dv < volume_min)
+			{
+				volume_min = dv;
 			}
 		}
-//#pragma omp cratical
-		{
-			ompSharVmax = std::max(ompSharVmax, volume_max);
-			ompSharVmin = std::min(ompSharVmin, volume_min);
-		}
 	}
-	MPI_Reduce(&ompSharVmax, &gloVmax,1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-	MPI_Reduce(&ompSharVmin, &gloVmin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
-	if (ci_rank == 0)
-	{
-		int numDime = o_dat.ci_Numdimen;
-		minDelta = pow(gloVmin, 1.0 / numDime);
-		maxDelta = pow(gloVmax, 1.0 / numDime);
-	}
-	MPI_Bcast(&minDelta, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	MPI_Bcast(&maxDelta, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	int numDime = o_dat.ci_Numdimen;
+	minDelta = pow(volume_min, 1.0 / numDime);
+	maxDelta = pow(volume_max, 1.0 / numDime);
 	o_dat.op_getGeomP()->setMinDelta(minDelta);
 	o_dat.op_getGeomP()->setMaxDelta(maxDelta);
 }
@@ -404,13 +365,9 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	}
 	o_dat.setNumBlocs(numBlocks);
 	o_dat.allocaMemoryBLock();
-	int totNumBlocks = numBlocks[0] * numBlocks[1] * numBlocks[2];
 	//===allocate Nodes into block
-
 	int blockIndex, i_bIndex[3];
 	double xnode[3];
-	vector<int>* loc_blockDat = new vector<int>[totNumBlocks];
-
 	for (int k = 0; k < o_dat.getTotnumNode(); k++)
 	{
 		if (o_dat.op_getNode(k)->getNodeType())
@@ -420,16 +377,14 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 			{
 				i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
 			}
-			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] + 
 				i_bIndex[2] * numBlocks[0] * numBlocks[1];
-			//o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
-			loc_blockDat[blockIndex].push_back(k + 1);
+			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
 		}
 	}
-
 	//==allocate element into block;
 	int AlgoType, * conNID, numNele;
-	double eleCen[3], (*xN)[3], * N;
+	double eleCen[3], (*xN)[3], *N;
 	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
 	{
 		AlgoType = o_dat.op_getEles(ele)->getAlgoType();
@@ -461,7 +416,6 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 			conNID = NULL, xN = NULL, N = NULL;
 		}
 	}
-	
 	//===============set families===============================
 	double delta_k, delta_j;
 	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
@@ -526,23 +480,17 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	}
 }
 
-void pdsolve::setFEID_PDEID(datModel& o_dat)
+void pdsolve::setFEID(datModel& o_dat)
 {
 	int totNumEle, algoType;
 	totNumEle = o_dat.getTotnumEle();
-	int startP, endP;
-	startP = ci_rank * totNumEle / ci_numProce;
-	endP = (ci_rank + 1) * totNumEle / ci_numProce;
-	for (int ele = startP; ele < endP; ele++)
+	for (int ele = 0; ele < totNumEle; ele++)
 	{
 		algoType = o_dat.op_getEles(ele)->getAlgoType();
 		if (algoType == 2)
 		{
-			o_dat.civ_feID.push_back(ele + 1);//be caution; distribute the ele ID to each core;
-		}
-		else
-		{
-			o_dat.civ_pdeID.push_back(ele + 1);
+			o_dat.civ_feID.push_back(ele + 1);
+			
 		}
 	}
 }
@@ -748,9 +696,9 @@ pdsolve::pdsolve()
 
 
 
-double pdsolve::inflFunc( double xi[], pdFamily* p_fami, datModel&o_dat)
+double pdsolve::inflFunc( double xi[], int famk, datModel&o_dat)
 {
-	double delt = p_fami->gethorizon();
+	double delt = o_dat.op_getFami(famk)->gethorizon();
 	double a = 1.0 /2.5;
 	double Aa = a * a * a;
 	double omega = exp(-(xi[0] * xi[0] + xi[1] * xi[1]+ xi[2] * xi[2])
@@ -759,25 +707,25 @@ double pdsolve::inflFunc( double xi[], pdFamily* p_fami, datModel&o_dat)
 }
 
 
-void pdsolve::shapTens2D(Matrix *A,  pdFamily* p_fami, datModel & o_dat)
+void pdsolve::shapTens2D(Matrix *A,  int famk, datModel & o_dat)
 {
 	//for 2D A matrix with size 5*5;
 	A->zero();
 	double xi[3], omega, temp, xj[3], xk[3],dv;
 	int Nid_m,Nid_k;
-	int numNodeOFfami = p_fami->getNumNode();
-	Nid_k = p_fami->getNodeID(0);
+	int numNodeOFfami = o_dat.op_getFami(famk)->getNumNode();
+	Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
 	o_dat.op_getNode(Nid_k-1)->getcoor(xk);
 	for (int j = 1; j < numNodeOFfami; j++)
 	{
-		Nid_m = p_fami->getNodeID(j);
+		Nid_m = o_dat.op_getFami(famk)->getNodeID(j);
 		o_dat.op_getNode(Nid_m - 1)->getcoor(xj);
 		dv = o_dat.op_getNode(Nid_m - 1)->getvolume();
 		for (int ii = 0; ii < 3; ii++)
 		{
 			xi[ii] = xj[ii] - xk[ii];
 		}
-		omega = inflFunc(xi, p_fami, o_dat);
+		omega = inflFunc(xi, famk, o_dat);
 		//row 0;
 		temp = omega*xi[0] * xi[0] *dv;
 		A->addCoeff(0, 0, temp);
@@ -836,25 +784,25 @@ void pdsolve::shapTens2D(Matrix *A,  pdFamily* p_fami, datModel & o_dat)
 	}
 }
 
-void pdsolve::shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat)
+void pdsolve::shapTens3D(Matrix* A, int famk, datModel& o_dat)
 {
 	// matrix A's size is 9*9;
 	A->zero();
 	double xi[3], omega, xj[3], xk[3], dv;
 	int Nid_m, Nid_k;
-	int numNodeOFfami = p_fami->getNumNode();
-	Nid_k = p_fami->getNodeID(0);
+	int numNodeOFfami = o_dat.op_getFami(famk)->getNumNode();
+	Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
 	o_dat.op_getNode(Nid_k - 1)->getcoor(xk);
 	for (int j = 1; j < numNodeOFfami; j++)
 	{
-		Nid_m = p_fami->getNodeID(j);
+		Nid_m = o_dat.op_getFami(famk)->getNodeID(j);
 		o_dat.op_getNode(Nid_m - 1)->getcoor(xj);
 		dv = o_dat.op_getNode(Nid_m - 1)->getvolume();
 		for (int ii = 0; ii < 3; ii++)
 		{
 			xi[ii] = xj[ii] - xk[ii];
 		}
-		omega = inflFunc(xi, p_fami, o_dat);
+		omega = inflFunc(xi, famk, o_dat);
 		double temp[9][9] = { xi[0] * xi[0],xi[0] * xi[1],xi[0] * xi[2],0.5 * xi[0] * xi[0] * xi[0],0.5 * xi[0] * xi[1] * xi[1],0.5 * xi[0] * xi[2] * xi[2],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],
 							xi[0] * xi[1],xi[1] * xi[1],xi[1] * xi[2],0.5 * xi[0] * xi[0] * xi[1],0.5 * xi[1] * xi[1] * xi[1],0.5 * xi[1] * xi[2] * xi[2],xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[2],xi[1] * xi[1] * xi[2],
 							xi[0] * xi[2],xi[1] * xi[2],xi[2] * xi[2],0.5 * xi[0] * xi[0] * xi[2],0.5 * xi[1] * xi[1] * xi[2],0.5 * xi[2] * xi[2] * xi[2],xi[0] * xi[1] * xi[2],xi[0] * xi[2] * xi[2],xi[1] * xi[2] * xi[2],
@@ -875,7 +823,7 @@ void pdsolve::shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat)
 	}
 }
 
-void pdsolve::vec_gd2D(double g[],double d[], Matrix *A, pdFamily* p_fami,double xi[], datModel & o_dat)
+void pdsolve::vec_gd2D(double g[],double d[], Matrix *A, int famk,double xi[], datModel & o_dat)
 {
 	// A(p,q) size 5*5;
 	Vector *vec_xi, *vecg;
@@ -902,7 +850,7 @@ void pdsolve::vec_gd2D(double g[],double d[], Matrix *A, pdFamily* p_fami,double
 
 }
 
-void pdsolve::vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat)
+void pdsolve::vec_gd3D(double g[], double d[], Matrix* A, int famk, double xi[], datModel& o_dat)
 {
 	// A(p,q) size 9*9;
 	Vector* vec_xi, * vecg;
@@ -934,12 +882,12 @@ void pdsolve::vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, doub
 	vecg = NULL;
 }
 
-void pdsolve::matG2D(Matrix * G, Matrix * A, pdFamily* p_fami, int m, datModel & o_dat)
+void pdsolve::matG2D(Matrix * G, Matrix * A, int famk, int m, datModel & o_dat)
 {
 	double xk[3], xm[3], xi[3];
 	int Nid_k, Nid_m;
-	Nid_k = p_fami->getNodeID(0);
-	Nid_m = p_fami->getNodeID(m);
+	Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
+	Nid_m = o_dat.op_getFami(famk)->getNodeID(m);
 	o_dat.op_getNode(Nid_k - 1)->getcoor(xk);
 	o_dat.op_getNode(Nid_m - 1)->getcoor(xm);
 	for (int i = 0; i < 3; i++)
@@ -947,11 +895,11 @@ void pdsolve::matG2D(Matrix * G, Matrix * A, pdFamily* p_fami, int m, datModel &
 		xi[i] = xm[i] - xk[i];
 	}
 
-	int mu_km = p_fami->getbondstate(m);
+	int mu_km = o_dat.op_getFami(famk)->getbondstate(m);
 
 	double g[2], d[3], omega, temp;
-	vec_gd2D(g, d, A, p_fami, xi, o_dat);
-	omega = inflFunc(xi, p_fami, o_dat);
+	vec_gd2D(g, d, A, famk, xi, o_dat);
+	omega = inflFunc(xi, famk, o_dat);
 
 	temp = mu_km* omega*((2 * cd_mu + cd_lambda)*d[0] + cd_mu * d[1]);
 	G->setCoeff(0, 0, temp);
@@ -962,12 +910,12 @@ void pdsolve::matG2D(Matrix * G, Matrix * A, pdFamily* p_fami, int m, datModel &
 	G->setCoeff(1, 1, temp);
 }
 
-void pdsolve::matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat)
+void pdsolve::matG3D(Matrix* G, Matrix* A, int famk, int m, datModel& o_dat)
 {
 	double xk[3], xm[3], xi[3];
 	int Nid_k, Nid_m;
-	Nid_k = p_fami->getNodeID(0);
-	Nid_m = p_fami->getNodeID(m);
+	Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
+	Nid_m = o_dat.op_getFami(famk)->getNodeID(m);
 	o_dat.op_getNode(Nid_k - 1)->getcoor(xk);
 	o_dat.op_getNode(Nid_m - 1)->getcoor(xm);
 	for (int i = 0; i < 3; i++)
@@ -975,11 +923,11 @@ void pdsolve::matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_
 		xi[i] = xm[i] - xk[i];
 	}
 
-	int mu_km = p_fami->getbondstate(m);
+	int mu_km = o_dat.op_getFami(famk)->getbondstate(m);
 
 	double g[3], d[6], omega, temp, trD;
-	vec_gd3D(g, d, A, p_fami, xi, o_dat);
-	omega = inflFunc(xi, p_fami, o_dat);
+	vec_gd3D(g, d, A, famk, xi, o_dat);
+	omega = inflFunc(xi, famk, o_dat);
 	trD = d[0] + d[1] + d[2];
 	//==assin values
 	temp = mu_km * omega * ((cd_mu + cd_lambda) * d[0] + cd_mu * trD);
@@ -999,21 +947,21 @@ void pdsolve::matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_
 	G->setCoeff(2, 2, temp);
 }
 
-void pdsolve::matH2D(Matrix * H, pdFamily* p_fami, datModel & o_dat)
+void pdsolve::matH2D(Matrix * H, int famk, datModel & o_dat)
 {
 	H->zero();
 	Matrix *A,*G;
 	A = new Matrix(5, 5);
-	shapTens2D(A, p_fami, o_dat);
+	shapTens2D(A, famk, o_dat);
 	G = new Matrix(2, 2);
 	double dv_m, temp;
 	int  NID_m;
-	int numNodeOfFam = p_fami->getNumNode();
+	int numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
 	for (int m = 1; m < numNodeOfFam; m++)
 	{
-		NID_m = p_fami->getNodeID(m);
+		NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 		dv_m = o_dat.op_getNode(NID_m - 1)->getvolume();
-		matG2D(G, A, p_fami, m, o_dat);
+		matG2D(G, A, famk, m, o_dat);
 		for (int i = 0; i < 2; i++)
 		{
 			for (int j = 0; j < 2; j++)
@@ -1030,21 +978,21 @@ void pdsolve::matH2D(Matrix * H, pdFamily* p_fami, datModel & o_dat)
 	A = NULL; G = NULL;
 }
 
-void pdsolve::matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat)
+void pdsolve::matH3D(Matrix* H, int famk, datModel& o_dat)
 {
 	H->zero();
 	Matrix* A, * G;
 	A = new Matrix(9, 9);
-	shapTens3D(A, p_fami, o_dat);
+	shapTens3D(A, famk, o_dat);
 	G = new Matrix(3, 3);
 	double dv_m, temp;
 	int  NID_m;
-	int numNodeOfFam = p_fami->getNumNode();
+	int numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
 	for (int m = 1; m < numNodeOfFam; m++)
 	{
-		NID_m = p_fami->getNodeID(m);
+		NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 		dv_m = o_dat.op_getNode(NID_m - 1)->getvolume();
-		matG3D(G, A, p_fami, m, o_dat);
+		matG3D(G, A, famk, m, o_dat);
 		for (int i = 0; i < 3; i++)
 		{
 			for (int j = 0; j < 3; j++)
@@ -1069,16 +1017,14 @@ void pdsolve::assembleInterWorkPD(datModel & o_dat)
 		Matrix* H;
 		int numNodeOfFami, NID_k, NID_m, eqindex_row, eqindex_col;
 		double dv_k, temp, tempu;
-		pdFamily* temP_fami;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFami = temP_fami->getNumNode();
-			NID_k = temP_fami->getNodeID(0);
+			numNodeOfFami = o_dat.op_getFami(famk)->getNumNode();
+			NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
-			matH2D(H, temP_fami, o_dat);
+			matH2D(H, famk, o_dat);
 			//====assemble===
 			for (int i = 0; i < numDime; i++)
 			{
@@ -1087,7 +1033,7 @@ void pdsolve::assembleInterWorkPD(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeOfFami; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < numDime; j++)
 						{
 							eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1119,16 +1065,14 @@ void pdsolve::assembleInterWorkPD(datModel & o_dat)
 		Matrix* H;
 		int numNodeOfFami, NID_k, NID_m, eqindex_row, eqindex_col;
 		double dv_k, temp, tempu;
-		pdFamily* temP_fami;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFami = temP_fami->getNumNode();
-			NID_k = temP_fami->getNodeID(0);
+			numNodeOfFami = o_dat.op_getFami(famk)->getNumNode();
+			NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
-			matH3D(H, temP_fami, o_dat);
+			matH3D(H, famk, o_dat);
 			//====assemble===
 			for (int i = 0; i < numDime; i++)
 			{
@@ -1137,7 +1081,7 @@ void pdsolve::assembleInterWorkPD(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeOfFami; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < numDime; j++)
 						{
 							eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1180,16 +1124,14 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 		int numNodeOfFami, NID_k, NID_m, eqindex_row, eqindex_col;
 		long long int i_temp;
 		double dv_k, temp, tempu;
-		pdFamily* temP_fami;
-		for (int famkk = startP; famkk < endP; famkk++)
+		for (int famk = startP; famk < endP; famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFami = temP_fami->getNumNode();
-			NID_k = temP_fami->getNodeID(0);
+			numNodeOfFami = o_dat.op_getFami(famk)->getNumNode();
+			NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
-			matH2D(H, temP_fami, o_dat);
+			matH2D(H, famk, o_dat);
 			//====assemble===
 			for (int i = 0; i < numDime; i++)
 			{
@@ -1198,7 +1140,7 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeOfFami; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < numDime; j++)
 						{
 							
@@ -1242,16 +1184,14 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 		int numNodeOfFami, NID_k, NID_m, eqindex_row, eqindex_col;
 		long long int i_temp;
 		double dv_k, temp, tempu;
-		pdFamily* temP_fami;
-		for (int famkk = startP; famkk < endP; famkk++)
+		for (int famk = startP; famk < endP; famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFami = temP_fami->getNumNode();
-			NID_k = temP_fami->getNodeID(0);
+			numNodeOfFami = o_dat.op_getFami(famk)->getNumNode();
+			NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
-			matH3D(H, temP_fami, o_dat);
+			matH3D(H, famk, o_dat);
 			//====assemble===
 			for (int i = 0; i < numDime; i++)
 			{
@@ -1260,7 +1200,7 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeOfFami; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < numDime; j++)
 						{
 							eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1287,33 +1227,33 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 	}
 }
 
-void pdsolve::matC2D(Matrix * C, pdFamily* p_fami, datModel & o_dat)
+void pdsolve::matC2D(Matrix * C, int famk, datModel & o_dat)
 {
 	C->zero();
 	Matrix *A;
 	A = new Matrix(5, 5);
-	shapTens2D(A, p_fami, o_dat);
+	shapTens2D(A, famk, o_dat);
 	double g[2], d[3];
 	double xk[3], xm[3], xi[3], dv_m, temp,omega;
 	int NID_k, NID_m, mu_km;
 	//1st node;
-	NID_k = p_fami->getNodeID(0);
+	NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 	o_dat.op_getNode(NID_k - 1)->getcoor(xk);
 	// integration
-	int numNodeOfFam = p_fami->getNumNode();
+	int numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
 	for (int m = 1; m < numNodeOfFam; m++)
 	{
 		//m-th node
-		NID_m = p_fami->getNodeID(m);
+		NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 		o_dat.op_getNode(NID_m - 1)->getcoor(xm);
 		dv_m = o_dat.op_getNode(NID_m - 1)->getvolume();
 		for (int i = 0; i < 3; i++)
 		{
 			xi[i] = xm[i] - xk[i];
 		}
-		mu_km = p_fami->getbondstate(m);
-		omega = inflFunc(xi, p_fami, o_dat);
-		vec_gd2D(g, d, A, p_fami, xi, o_dat);
+		mu_km = o_dat.op_getFami(famk)->getbondstate(m);
+		omega = inflFunc(xi, famk, o_dat);
+		vec_gd2D(g, d, A, famk, xi, o_dat);
 		temp = mu_km* omega * g[0] * dv_m;
 		C->setCoeff(0, 2 * m, temp);
 		C->setCoeff(2, 2 * m + 1, temp);
@@ -1329,34 +1269,34 @@ void pdsolve::matC2D(Matrix * C, pdFamily* p_fami, datModel & o_dat)
 	A = NULL;
 }
 
-void pdsolve::matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat)
+void pdsolve::matC3D(Matrix* C, int famk, datModel& o_dat)
 {
 	C->zero();
 	Matrix* A;
 	A = new Matrix(9, 9);
-	shapTens3D(A, p_fami, o_dat);
+	shapTens3D(A, famk, o_dat);
 	double g[3], d[6];
 	double xk[3], xm[3], xi[3], dv_m, omega;
 	int NID_k, NID_m, mu_km;
 	//1st node;
-	NID_k = p_fami->getNodeID(0);
+	NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 	o_dat.op_getNode(NID_k - 1)->getcoor(xk);
 	// integration
-	int numNodeOfFam = p_fami->getNumNode();
+	int numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
 	double d_c[3];
 	for (int m = 1; m < numNodeOfFam; m++)
 	{
 		//m-th node
-		NID_m = p_fami->getNodeID(m);
+		NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 		o_dat.op_getNode(NID_m - 1)->getcoor(xm);
 		dv_m = o_dat.op_getNode(NID_m - 1)->getvolume();
 		for (int i = 0; i < 3; i++)
 		{
 			xi[i] = xm[i] - xk[i];
 		}
-		mu_km = p_fami->getbondstate(m);
-		omega = inflFunc(xi, p_fami, o_dat);
-		vec_gd3D(g, d, A, p_fami, xi, o_dat);
+		mu_km = o_dat.op_getFami(famk)->getbondstate(m);
+		omega = inflFunc(xi, famk, o_dat);
+		vec_gd3D(g, d, A, famk, xi, o_dat);
 		for (int i = 0; i < 3; i++)
 		{
 			d_c[i]= mu_km * omega * g[i] * dv_m;
@@ -1399,9 +1339,8 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 		int bLinNID[2], NID_m;
 		double xL1[2], xL2[2], nx, ny, temp, tempu;
 		bool bL1_isPDNODE, bL2_isPDNODE;
-		int numNodeFam, famkk;
+		int numNodeFam, famk;
 		int eqIndex_row[2], eqIndex_col[2];
-		pdFamily* temP_fami;
 		for (int bL = 0; bL < o_dat.getTotnumPDBEs(); bL++)
 		{
 			o_dat.op_getPDBE(bL)->getNodeID(bLinNID);
@@ -1421,13 +1360,12 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 			N->setCoeff(1, 1, ny);
 			N->setCoeff(1, 2, nx);
 			//=============t1=================
-			famkk = o_dat.op_getNode(bLinNID[0] - 1)->getFamID() - 1;
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeFam = temP_fami->getNumNode();
+			famk = o_dat.op_getNode(bLinNID[0] - 1)->getFamID() - 1;
+			numNodeFam = o_dat.op_getFami(famk)->getNumNode();
 			C = new Matrix(3, 2 * numNodeFam);
 			DC = new Matrix(3, 2 * numNodeFam);
 			NDC = new Matrix(2, 2 * numNodeFam);
-			matC2D(C, temP_fami, o_dat);
+			matC2D(C, famk, o_dat);
 			matoperat.matMultiply(cop_D, C, DC);
 			matoperat.matMultiply(N, DC, NDC);
 			//u1;
@@ -1438,7 +1376,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1467,7 +1405,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1492,13 +1430,12 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 			delete C, DC, NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 			//===========t2**** node 2========
-			famkk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeFam = temP_fami->getNumNode();
+			famk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
+			numNodeFam = o_dat.op_getFami(famk)->getNumNode();
 			C = new Matrix(3, 2 * numNodeFam);
 			DC = new Matrix(3, 2 * numNodeFam);
 			NDC = new Matrix(2, 2 * numNodeFam);
-			matC2D(C, temP_fami, o_dat);
+			matC2D(C, famk, o_dat);
 			matoperat.matMultiply(cop_D, C, DC);
 			matoperat.matMultiply(N, DC, NDC);
 			//u1; node 1
@@ -1509,7 +1446,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1538,7 +1475,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1568,9 +1505,8 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 	else if (numDime==3)
 	{	
 		//====================3D===================
-		pdFamily* temP_fami;
 		int nG, conNID[4];
-		int famiID, numNodeFam, eqIndex_row, eqIndex_col;
+		int famID, numNodeFam, eqIndex_row, eqIndex_col;
 		int NID_m;
 		double p, q, wp, wq, fac, xN[4][3], temp, tempu;
 		double N[4];//N[4] are shape functions;
@@ -1607,12 +1543,11 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 						fac = N[ei] * wp * wq;
 						matoperat.matMultiply(mNt, fac, f_mNt);
 						matN_trans(Nmat, xN, p, q);
-						famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
-						temP_fami = o_dat.op_getFami(famiID - 1);
-						numNodeFam = temP_fami->getNumNode();
+						famID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
+						numNodeFam = o_dat.op_getFami(famID - 1)->getNumNode();
 						C = new Matrix(6, 3 * numNodeFam);
 						finMat = new Matrix(12, 3 * numNodeFam);
-						matC3D(C, temP_fami, o_dat);
+						matC3D(C, famID - 1, o_dat);
 						matoperat.matMultiply(f_mNt, Nmat, f_mNt_Nm);
 						matoperat.matMultiply(f_mNt_Nm, cop_D, f_mNt_Nm_D);
 						matoperat.matMultiply(f_mNt_Nm_D, C, finMat);
@@ -1626,7 +1561,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 								{
 									for (int m = 0; m < numNodeFam; m++)
 									{
-										NID_m = temP_fami->getNodeID(m);
+										NID_m = o_dat.op_getFami(famID-1)->getNodeID(m);
 										for (int jj = 0; jj < 3; jj++)
 										{
 											eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
@@ -1678,8 +1613,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 		long long int i_temp;
 		double xL1[2], xL2[2], nx, ny, temp, tempu;
 		bool bL1_isPDNODE, bL2_isPDNODE;
-		int numNodeFam, famkk;
-		pdFamily* temP_fami;
+		int numNodeFam, famk;
 		int eqIndex_row[2], eqIndex_col[2];
 		for (int bL = startP; bL < endP; bL++)
 		{
@@ -1700,13 +1634,12 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 			N->setCoeff(1, 1, ny);
 			N->setCoeff(1, 2, nx);
 			//=============t1=================
-			famkk = o_dat.op_getNode(bLinNID[0] - 1)->getFamID() - 1;
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeFam = temP_fami->getNumNode();
+			famk = o_dat.op_getNode(bLinNID[0] - 1)->getFamID() - 1;
+			numNodeFam = o_dat.op_getFami(famk)->getNumNode();
 			C = new Matrix(3, 2 * numNodeFam);
 			DC = new Matrix(3, 2 * numNodeFam);
 			NDC = new Matrix(2, 2 * numNodeFam);
-			matC2D(C, temP_fami, o_dat);
+			matC2D(C, famk, o_dat);
 			matoperat.matMultiply(cop_D, C, DC);
 			matoperat.matMultiply(N, DC, NDC);
 			//u1;
@@ -1717,7 +1650,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
@@ -1756,7 +1689,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
@@ -1789,13 +1722,12 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 			delete C, DC, NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 			//===========t2**** node 2========
-			famkk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeFam = temP_fami->getNumNode();
+			famk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
+			numNodeFam = o_dat.op_getFami(famk)->getNumNode();
 			C = new Matrix(3, 2 * numNodeFam);
 			DC = new Matrix(3, 2 * numNodeFam);
 			NDC = new Matrix(2, 2 * numNodeFam);
-			matC2D(C, temP_fami, o_dat);
+			matC2D(C, famk, o_dat);
 			matoperat.matMultiply(cop_D, C, DC);
 			matoperat.matMultiply(N, DC, NDC);
 			//u1; node 1
@@ -1806,7 +1738,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							
@@ -1846,7 +1778,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				{
 					for (int m = 0; m < numNodeFam; m++)
 					{
-						NID_m = temP_fami->getNodeID(m);
+						NID_m = o_dat.op_getFami(famk)->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
@@ -1885,9 +1817,8 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 	else if (numDime == 3)
 	{
 		//====================3D===================
-		pdFamily* temP_fami;
 		int nG, conNID[4];
-		int famiID, numNodeFam, eqIndex_row, eqIndex_col;
+		int famID, numNodeFam, eqIndex_row, eqIndex_col;
 		int NID_m;
 		long long int i_temp;
 		double p, q, wp, wq, fac, xN[4][3], temp, tempu;
@@ -1925,12 +1856,11 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 						fac = N[ei] * wp * wq;
 						matoperat.matMultiply(mNt, fac, f_mNt);
 						matN_trans(Nmat, xN, p, q);
-						famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
-						temP_fami = o_dat.op_getFami(famiID - 1);
-						numNodeFam = temP_fami->getNumNode();
+						famID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
+						numNodeFam = o_dat.op_getFami(famID - 1)->getNumNode();
 						C = new Matrix(6, 3 * numNodeFam);
 						finMat = new Matrix(12, 3 * numNodeFam);
-						matC3D(C, temP_fami, o_dat);
+						matC3D(C, famID - 1, o_dat);
 						matoperat.matMultiply(f_mNt, Nmat, f_mNt_Nm);
 						matoperat.matMultiply(f_mNt_Nm, cop_D, f_mNt_Nm_D);
 						matoperat.matMultiply(f_mNt_Nm_D, C, finMat);
@@ -1944,7 +1874,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 								{
 									for (int m = 0; m < numNodeFam; m++)
 									{
-										NID_m = temP_fami->getNodeID(m);
+										NID_m = o_dat.op_getFami(famID - 1)->getNodeID(m);
 										for (int jj = 0; jj < 3; jj++)
 										{
 											
@@ -2158,10 +2088,10 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 {
 	// By traditional FEM
 		
-	/*int totNumFE, startP, endP;
+	int totNumFE, startP, endP;
 	totNumFE = o_dat.civ_feID.size();
 	startP = ci_rank * totNumFE / ci_numProce;
-	endP = (ci_rank + 1) * totNumFE / ci_numProce;*/
+	endP = (ci_rank + 1) * totNumFE / ci_numProce;
 
 	Matrix* Ke;
 	int algoType, numDime;
@@ -2173,7 +2103,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 	double temp, (*xN)[3], tempu;
 
 	
-	for (int fe = 0; fe < o_dat.civ_feID.size(); fe++)
+	for (int fe = startP; fe < endP; fe++)
 	{
 		ele = o_dat.civ_feID[fe] - 1;
 		//algoType = o_dat.op_getEles(ele)->getAlgoType();
@@ -3015,18 +2945,16 @@ void pdsolve::calPDNodeStresses(datModel & o_dat)
 		sigma = new Vector(3);
 		int numNodeOfFam, Nid_m, Nid_k;
 		double tempu;
-		pdFamily* temP_fami;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFam = temP_fami->getNumNode();
-			Nid_k = temP_fami->getNodeID(0);
+			numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
+			Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
 			C = new Matrix(3, 2 * numNodeOfFam);
 			uk = new Vector(2 * numNodeOfFam);
-			matC2D(C, temP_fami, o_dat);
+			matC2D(C, famk, o_dat);
 			for (int m = 0; m < numNodeOfFam; m++)
 			{
-				Nid_m = temP_fami->getNodeID(m);
+				Nid_m = o_dat.op_getFami(famk)->getNodeID(m);
 				for (int i = 0; i < 2; i++)
 				{
 					tempu = o_dat.op_getNode(Nid_m - 1)->op_getDof(i)->d_getValue();
@@ -3054,18 +2982,16 @@ void pdsolve::calPDNodeStresses(datModel & o_dat)
 		sigma = new Vector(6);
 		int numNodeOfFam, Nid_m, Nid_k;
 		double tempu;
-		pdFamily* temP_fami;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
 		{
-			temP_fami = o_dat.op_getFami(famkk);
-			numNodeOfFam = temP_fami->getNumNode();
-			Nid_k = temP_fami->getNodeID(0);
+			numNodeOfFam = o_dat.op_getFami(famk)->getNumNode();
+			Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
 			C = new Matrix(6, numDime * numNodeOfFam);
 			uk = new Vector(numDime * numNodeOfFam);
-			matC3D(C, temP_fami, o_dat);
+			matC3D(C, famk, o_dat);
 			for (int m = 0; m < numNodeOfFam; m++)
 			{
-				Nid_m = temP_fami->getNodeID(m);
+				Nid_m = o_dat.op_getFami(famk)->getNodeID(m);
 				for (int i = 0; i < numDime; i++)
 				{
 					tempu = o_dat.op_getNode(Nid_m - 1)->op_getDof(i)->d_getValue();

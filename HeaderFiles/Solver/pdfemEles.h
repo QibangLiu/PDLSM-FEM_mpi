@@ -42,7 +42,6 @@ public:
 	virtual void eleEquivNodalForce(Vector* Fe, double t, double xN[][3]) = 0;
 	virtual void eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matrix* L, Vector* Ue, double xN[][3]) = 0;
 	virtual void print_vtk(ofstream& fout,int *eleNodeID) = 0;
-	virtual double eleVolume(double xN[][3]) = 0;
 
 public:
 	int ci_numNodes;

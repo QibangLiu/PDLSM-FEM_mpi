@@ -8,8 +8,6 @@ pdBlock::pdBlock(int id)
 
 pdBlock::~pdBlock()
 {
-	cv_Nodeid.clear();
-	cv_eleID.clear();
 }
 
 void pdBlock::putNodeInBlock(int id)

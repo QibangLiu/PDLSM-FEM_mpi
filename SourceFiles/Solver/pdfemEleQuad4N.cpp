@@ -171,26 +171,6 @@ void pdfemEleQuad4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matri
 	}
 }
 
-double pdfemEleQuad4N::eleVolume(double xN[][3])
-{
-	double VolEle = 0;
-	double wp, wq, detJ, p, q, r = 0;
-	int nG = o_globGP.i_getNumPts();
-	for (int mp = 0; mp < nG; mp++)
-	{
-		wp = o_globGP.d_getWeight(mp);
-		p = o_globGP.d_getGaussPt(mp);
-		for (int mq = 0; mq < nG; mq++)
-		{
-			wq = o_globGP.d_getWeight(mq);
-			q = o_globGP.d_getGaussPt(mq);
-			detJ = detJacobi(xN, p, q, r);
-			VolEle = VolEle + wp * wq * detJ;
-		}
-	}
-	return VolEle;
-}
-
 void pdfemEleQuad4N::print_vtk(ofstream& fout, int* eleNodeID)
 {
 	switch (ci_eleType)

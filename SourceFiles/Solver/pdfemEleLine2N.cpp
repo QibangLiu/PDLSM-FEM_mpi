@@ -71,11 +71,6 @@ void pdfemEleLine2N::eleFitStresses(int flag,Vector* Nsigma[], Matrix* D, Matrix
 {
 }
 
-double pdfemEleLine2N::eleVolume(double xN[][3])
-{
-	return 0.0;
-}
-
 
 void pdfemEleLine2N::print_vtk(ofstream& fout, int* eleNodeID)
 {

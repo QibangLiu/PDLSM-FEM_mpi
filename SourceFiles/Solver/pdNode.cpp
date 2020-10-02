@@ -52,11 +52,6 @@ void pdNode::addvolume(double dv)
 	cd_dv = cd_dv + dv;
 }
 
-void pdNode::setVolume(double dv)
-{
-	cd_dv = dv;
-}
-
 
 pdDof * pdNode::op_getDof(int i) const
 {

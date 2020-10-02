@@ -8,23 +8,8 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &ci_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &ci_numProce);
-	//=====OpenMP thread seting
-	int NUM_THREAD;
-	if (argc == 3)
-	{
-		 NUM_THREAD = atoi(argv[2]);
-		omp_set_num_threads(NUM_THREAD);
-	}
-	else
-	{
-		NUM_THREAD = omp_get_num_procs();
-	}
-	if (ci_rank==0)
-	{
 
-		printf("Number of OpenMP thread: %d\n", NUM_THREAD);
-	}
-	
+
 	//===========input file=======
 	ifstream fin;		//fin for input file
 	char* ifName = argv[1];
@@ -59,7 +44,7 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	if (ci_rank==0)
 	{
 		double t2 = MPI_Wtime();
-		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", t2 - t1, argv[1]);
+		printf("Elapsed time of PDLSM-FEM mpi solving is %f\n", t2 - t1);
 		//===========post processing=====================
 		printf("writing results.......\n");
 		fioFiles o_files;
