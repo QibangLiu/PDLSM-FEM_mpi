@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include<mpi.h>
 #include<omp.h>
+#include<limits>
 #define pi  3.141592653589793
 using namespace std;
 class pdsolve
@@ -19,13 +20,13 @@ public:
 	
 	//====data model setting=============================================
 	void setDatModel(datModel& o_dat); // set the data model, must be called before solving;
+	void setFEID_PDEID(datModel& o_dat);//set the FE id and PDE id for each cores;
 	void findDomainDimen(datModel &o_dat);// get the domain dimension size;
 	void setPDNODEandnumFami(datModel& o_dat);// set the node type and memory allocate for family;
 	void Setdof_Index(datModel& o_dat);//set each dof's equation position;
 	void calVolumeOfNode(datModel& o_dat);// calculate volume of pd node;
 	void setDeltaMaxMin(datModel& o_dat);// find out the max and min Delta;
 	void setBlockAndFami(datModel& o_dat);// initialize block;
-	void setFEID(datModel& o_dat);
 	//============PD algorithem===============================================;
 	//====some auxiliary functions
 	long long int findCSRIndexOfMat(int rowIndex, int colIndex);
@@ -116,7 +117,7 @@ public:
 
 	//=====================post-processing==================================;
 	//===stresses===;
-	void calPDNodeStresses(datModel& o_dat);
+	void calPDNodeStresses(datModel& o_dat, int* count);
 	void calFEMNodeStresses_EXP(datModel& o_dat, int* count);
 	void calFEMNodeStresses_LSM(datModel& o_dat, int* count);
 	void calGlobalNodeStresses(datModel &o_dat);

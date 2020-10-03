@@ -19,6 +19,7 @@
 #include "pdGaussPt.h"
 #include "pdReactionForceNode.h"
 #include"pdfemEssentialBCs.h"
+#include"dataLev2.h"
 #include<vector>
 
 #define pi  3.141592653589793
@@ -76,10 +77,13 @@ public:
 	void allocaMemoryFami();
 
 
-	
+	dataLev2* cop_datLev2;
 	string cs_title;
 	int ci_Numdimen;
-	vector<int>civ_feID;// finite elements' ID;
+	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
+						//or pure FE node volume, or family setting;
+	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
+	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function;
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;

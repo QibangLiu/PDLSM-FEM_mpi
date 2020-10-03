@@ -7,6 +7,7 @@ datModel::datModel()
 	cop_Gauss[1] = new pdGaussPt(5);
 	//=====inital data=====
 	cop2_Block = NULL;
+	cop_datLev2 = new dataLev2();
 }
 
 datModel::~datModel()
@@ -45,12 +46,13 @@ void datModel::readdata(ifstream & fin)
 	double x[3];
 	fin >> ci_numNode >> ci_numEle;
 	cop2_Node = new pdNode*[ci_numNode];
+	cop_datLev2->cdp_sigma = new double[6 * ci_numNode];
 	for (int i = 0; i < ci_numNode; i++)
 	{
 
 		fin >> Nid >> x[0] >> x[1] >> x[2];
 		//cout << id << ' ' << xvalue << endl;
-		cop2_Node[i] = new pdNode(Nid,x);
+		cop2_Node[i] = new pdNode(Nid,x, cop_datLev2);
 	}
 
 	//====read the element data ==================

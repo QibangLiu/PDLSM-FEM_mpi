@@ -3,17 +3,19 @@
 #include<fstream>
 //#include"pdSetsolve.h"
 #include"pdDof.h"
-//#include"Vector.h"
+#include"dataLev2.h"
 #include<iomanip>
+
 using namespace std;
 class pdNode
 {
 public:
-	pdNode(int id, double x[]);
+	pdNode(int id, double x[], dataLev2* p_datLev2);
 	~pdNode();
 	int getId()const;
 	void getcoor(double x[])const;
 	double getvolume()const;
+	void setVolume(double dv);
 	void addvolume(double dv);
 	pdDof *op_getDof(int i)const;
 	void print(ofstream &fout);
@@ -40,8 +42,8 @@ private:
 	double cd_x[3];//coordinate
 	pdDof *cop_dof[3];
 	int ci_famID;
-	double cd_sigma[6];
+	//double *cdp_sigma;
 	double cd_localDamage;
 	int ci_nodeType; // 0--pure fem node; 1-- interface node; 2-- pure PD node;
-
+	dataLev2* cop_datLev2;
 };

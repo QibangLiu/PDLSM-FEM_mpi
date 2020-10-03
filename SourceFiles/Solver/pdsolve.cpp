@@ -90,13 +90,14 @@ void pdsolve::setDatModel(datModel& o_dat)
 	{
 		printf("Setting data model......\n");
 	}
+	// below is order dependent;
+	setFEID_PDEID(o_dat);
 	findDomainDimen(o_dat);
 	setPDNODEandnumFami(o_dat);
 	Setdof_Index(o_dat);
 	calVolumeOfNode(o_dat);
 	setDeltaMaxMin(o_dat);
 	setBlockAndFami(o_dat);
-	setFEID(o_dat);
 	if (ci_rank == 0)
 	{
 		printf("Finished setting data model.\n");
@@ -105,10 +106,17 @@ void pdsolve::setDatModel(datModel& o_dat)
 
 void pdsolve::findDomainDimen(datModel& o_dat)
 {
-	double lbc[3], rtc[3], d_x[3];
-	o_dat.op_getNode(0)->getcoor(lbc);
-	o_dat.op_getNode(0)->getcoor(rtc);
-	for (int i = 1; i < o_dat.getTotnumNode(); i++)
+	int numNode, startP, endP;
+	numNode = o_dat.getTotnumNode();
+	startP = ci_rank * numNode / ci_numProce;
+	endP = (ci_rank + 1) * numNode / ci_numProce;
+
+	double lbc[3], rtc[3], d_x[3], lbcGlo[3], rtcGlo[3];
+	o_dat.op_getNode(startP)->getcoor(lbc);
+	o_dat.op_getNode(startP)->getcoor(rtc);
+	o_dat.op_getNode(startP)->getcoor(lbcGlo);
+	o_dat.op_getNode(startP)->getcoor(rtcGlo);
+	for (int i = startP+ 1; i < endP; i++)
 	{
 		o_dat.op_getNode(i)->getcoor(d_x);
 		for (int j = 0; j < 3; j++)
@@ -123,17 +131,25 @@ void pdsolve::findDomainDimen(datModel& o_dat)
 			}
 		}
 	}
-	for (int i = 0; i < 3; i++)
+	MPI_Reduce(&lbc[0], &lbcGlo[0], 3, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&rtc[0], &rtcGlo[0], 3, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+	if (ci_rank == 0)
 	{
-		lbc[i] = lbc[i] - 1.0E-14 * abs(lbc[i]);
-		rtc[i] = rtc[i] + 1.0E-14 * abs(rtc[i]);
+		for (int i = 0; i < 3; i++)
+		{
+			lbcGlo[i] = lbcGlo[i] - 1.0E-14 * abs(lbcGlo[i]);
+			rtcGlo[i] = rtcGlo[i] + 1.0E-14 * abs(rtcGlo[i]);
+		}
 	}
-	o_dat.op_getGeomP()->setLBC(lbc);
-	o_dat.op_getGeomP()->setRTC(rtc);
+	MPI_Bcast(&lbcGlo[0], 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&rtcGlo[0], 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	o_dat.op_getGeomP()->setLBC(lbcGlo);
+	o_dat.op_getGeomP()->setRTC(rtcGlo);
 }
 
 void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 {
+	//====maybe MPI parallize future; or omp parallize;
 	int algoType, * conNID, numNele;
 	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
 	{
@@ -169,7 +185,7 @@ void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 			delete[] conNID; conNID = NULL;
 		}
 	}
-
+	/*============*/
 
 	int numFami = 0;
 	for (int k = 0; k < o_dat.getTotnumNode(); k++)
@@ -177,6 +193,7 @@ void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 		if (o_dat.op_getNode(k)->getNodeType())
 		{
 			numFami = numFami + 1;
+			o_dat.civ_pdNodeIDX.push_back(k);
 		}
 	}
 	o_dat.SetNumFamilies(numFami);
@@ -185,6 +202,7 @@ void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 
 void pdsolve::Setdof_Index(datModel& o_dat)
 {
+	// dependency, can not parallize;
 	int countEq, numDimen;
 	numDimen = o_dat.ci_Numdimen;
 	countEq = 0;
@@ -208,82 +226,116 @@ void pdsolve::Setdof_Index(datModel& o_dat)
 
 void pdsolve::calVolumeOfNode(datModel& o_dat)
 {
-	int* conNID, numNodeELE, algoType;
-	double(*xN)[3], VolEle;
-	for (int k = 0; k < o_dat.getTotnumEle(); k++)
+	
+	/*MPI parallized*/
+	//====initiallize;
+	int numNode = o_dat.getTotnumNode();
+	double* loc_V = new double[numNode];
+	double* glo_V = new double[numNode];
+	//#pragma omp parallel for
+	for (int i = 0; i < numNode; i++)
 	{
-		algoType = o_dat.op_getEles(k)->getAlgoType();
-		if (algoType == 1)
+		loc_V[i] = 0;
+		glo_V[i] = 0;
+	}
+	//=======
+	int totNumPDE, startP, endP;
+	totNumPDE = o_dat.civ_pdeIDX.size();
+	startP = ci_rank * totNumPDE / ci_numProce;
+	endP = (ci_rank + 1) * totNumPDE / ci_numProce;
+	//======
+	int* conNID, numNodeELE, ele;
+	double(*xN)[3], VolEle;
+	for (int pde = startP; pde < endP; pde++)
+	{
+		
+		ele = o_dat.civ_pdeIDX[pde];
+		numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
+		conNID = new int[numNodeELE];
+		xN = new double[numNodeELE][3];
+		o_dat.op_getEles(ele)->getConNid(conNID);
+		for (int i = 0; i < numNodeELE; i++)
 		{
-			numNodeELE = o_dat.op_getEles(k)->ci_numNodes;
+			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+		}
+		//Gauss integration to get element volumn
+		VolEle = VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+		for (int i = 0; i < numNodeELE; i++)
+		{
+			//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
+			loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
+		}
+		delete[] conNID, xN;
+		conNID = NULL, xN = NULL;
+		
+	}
+	if (ci_PDBN_ITA_flag)
+	{
+		int totNumFE;
+		totNumFE = o_dat.civ_feIDX.size();
+		startP = ci_rank * totNumFE / ci_numProce;
+		endP = (ci_rank + 1) * totNumFE / ci_numProce;
+		for (int fe = startP; fe < endP; fe++)
+		{
+			
+			
+			ele= o_dat.civ_feIDX[fe];
+			numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
 			conNID = new int[numNodeELE];
 			xN = new double[numNodeELE][3];
-			o_dat.op_getEles(k)->getConNid(conNID);
+			o_dat.op_getEles(ele)->getConNid(conNID);
 			for (int i = 0; i < numNodeELE; i++)
 			{
 				o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
 			}
 			//Gauss integration to get element volumn
-			VolEle = VolEle = o_dat.op_getEles(k)->eleVolume(xN);
+			VolEle = VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
 			for (int i = 0; i < numNodeELE; i++)
 			{
-				o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
+				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 0)
+				{
+					//only for pure fem node;
+					//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
+					loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
+				}
 			}
 			delete[] conNID, xN;
 			conNID = NULL, xN = NULL;
+			
 		}
 	}
-	if (ci_PDBN_ITA_flag)
+	MPI_Reduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(glo_V, numNode, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	for (int i = 0; i < numNode; i++)
 	{
-		for (int k = 0; k < o_dat.getTotnumEle(); k++)
-		{
-			algoType = o_dat.op_getEles(k)->getAlgoType();
-			if (algoType == 2)
-			{
-				numNodeELE = o_dat.op_getEles(k)->ci_numNodes;
-				conNID = new int[numNodeELE];
-				xN = new double[numNodeELE][3];
-				o_dat.op_getEles(k)->getConNid(conNID);
-				for (int i = 0; i < numNodeELE; i++)
-				{
-					o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-				}
-				//Gauss integration to get element volumn
-				VolEle = VolEle = o_dat.op_getEles(k)->eleVolume(xN);
-				for (int i = 0; i < numNodeELE; i++)
-				{
-					if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 0)
-					{
-						//only for pure fem node;
-						o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
-					}
-				}
-				delete[] conNID, xN;
-				conNID = NULL, xN = NULL;
-			}
-		}
+		o_dat.op_getNode(i)->setVolume(glo_V[i]);
 	}
+	
+	//==release memory;
+	delete[] loc_V, glo_V;
+	loc_V = NULL; glo_V = NULL;
+	o_dat.civ_pdeIDX.clear();
 }
 
 void pdsolve::setDeltaMaxMin(datModel& o_dat)
 {
-	double volume_max=0, volume_min=0, dv, minDelta, maxDelta;
+	double volume_max, volume_min, dv, minDelta, maxDelta, gloVmax, gloVmin;
 	//====initialize==
-	for (int i = 0; i < o_dat.getTotnumNode(); i++)
-	{
-		if (o_dat.op_getNode(i)->getNodeType())
-		{
-			volume_max = o_dat.op_getNode(i)->getvolume();
-			volume_min = o_dat.op_getNode(i)->getvolume();
-			break;
-		}
-	}
+	volume_max = -(numeric_limits<double>::max());
+	volume_min = numeric_limits<double>::max();
+	gloVmax = volume_max;
+	gloVmin = volume_min;
+	int totNumPDN, startP, endP, nd;
+	totNumPDN = o_dat.civ_pdNodeIDX.size();
+	startP = ci_rank * totNumPDN / ci_numProce;
+	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
 	//======find out max min volumn;
-	for (int i = 0; i < o_dat.getTotnumNode(); i++)
+	for (int k = startP; k < endP; k++)
 	{
-		if (o_dat.op_getNode(i)->getNodeType())
+		//if (o_dat.op_getNode(i)->getNodeType())
 		{
-			dv = o_dat.op_getNode(i)->getvolume();
+			nd = o_dat.civ_pdNodeIDX[k];
+			dv = o_dat.op_getNode(nd)->getvolume();
 			if (dv > volume_max)
 			{
 				volume_max = dv;
@@ -294,9 +346,16 @@ void pdsolve::setDeltaMaxMin(datModel& o_dat)
 			}
 		}
 	}
-	int numDime = o_dat.ci_Numdimen;
-	minDelta = pow(volume_min, 1.0 / numDime);
-	maxDelta = pow(volume_max, 1.0 / numDime);
+	MPI_Reduce(&volume_max, &gloVmax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&volume_min, &gloVmin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+	if (ci_rank == 0)
+	{
+		int numDime = o_dat.ci_Numdimen;
+		minDelta = pow(gloVmin, 1.0 / numDime);
+		maxDelta = pow(gloVmax, 1.0 / numDime);
+	}
+	MPI_Bcast(&minDelta, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&maxDelta, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	o_dat.op_getGeomP()->setMinDelta(minDelta);
 	o_dat.op_getGeomP()->setMaxDelta(maxDelta);
 }
@@ -438,7 +497,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	}
 }
 
-void pdsolve::setFEID(datModel& o_dat)
+void pdsolve::setFEID_PDEID(datModel& o_dat)
 {
 	int totNumEle, algoType;
 	totNumEle = o_dat.getTotnumEle();
@@ -447,8 +506,16 @@ void pdsolve::setFEID(datModel& o_dat)
 		algoType = o_dat.op_getEles(ele)->getAlgoType();
 		if (algoType == 2)
 		{
-			o_dat.civ_feID.push_back(ele + 1);
-			
+			o_dat.civ_feIDX.push_back(ele);
+		}
+		else if (algoType==1)
+		{
+			o_dat.civ_pdeIDX.push_back(ele);
+		}
+		else
+		{
+			printf("Error: Element algorithem type must be 1 or 2.\n");
+			exit(0);
 		}
 	}
 }
@@ -2062,7 +2129,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 	// By traditional FEM
 		
 	int totNumFE, startP, endP;
-	totNumFE = o_dat.civ_feID.size();
+	totNumFE = o_dat.civ_feIDX.size();
 	startP = ci_rank * totNumFE / ci_numProce;
 	endP = (ci_rank + 1) * totNumFE / ci_numProce;
 
@@ -2078,7 +2145,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 	
 	for (int fe = startP; fe < endP; fe++)
 	{
-		ele = o_dat.civ_feID[fe] - 1;
+		ele = o_dat.civ_feIDX[fe];
 		//algoType = o_dat.op_getEles(ele)->getAlgoType();
 		//if (algoType == 2)
 		{
@@ -2562,10 +2629,9 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat)
 	{
 		printf("Finshed cluster_PARDISO solving.\n");
 	}
-	if (ci_rank==0)
-	{
-		storeDisplacementResult(o_dat, Ug);
-	}
+	/*store results========;*/
+	MPI_Bcast(Ug->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	storeDisplacementResult(o_dat, Ug);
 	delete Ug; Ug = NULL;
 	//sequential solve omp solver
 	//if (ci_rank==0)
@@ -2586,11 +2652,8 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat)
 	//}
 	delete[] cip_ia, cip_ja, cdp_FGlo, cdp_KuGlo;
 	cip_ia = NULL, cip_ja = NULL, cdp_FGlo = NULL, cdp_KuGlo = NULL;
-	//==stresses
-	if (ci_rank==0)
-	{
-		calGlobalNodeStresses(o_dat);
-	}
+	/*==stresses==========*/
+	calGlobalNodeStresses(o_dat);
 	
 }
 
@@ -2922,9 +2985,13 @@ bool pdsolve::intersection(double L1X1[], double L1X2[], double L2X1[], double L
 	return true;
 }
 
-void pdsolve::calPDNodeStresses(datModel & o_dat)
+void pdsolve::calPDNodeStresses(datModel & o_dat, int* count)
 {
 	int numDime = o_dat.ci_Numdimen;
+	int numFami, startP, endP;
+	numFami = o_dat.getTotnumFami();
+	startP = ci_rank * numFami / ci_numProce;
+	endP = (ci_rank + 1) * numFami / ci_numProce;
 	pdFamily* temP_fami;
 	if (numDime==2)
 	{
@@ -2934,11 +3001,12 @@ void pdsolve::calPDNodeStresses(datModel & o_dat)
 		sigma = new Vector(3);
 		int numNodeOfFam, Nid_m, Nid_k;
 		double tempu;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famkk = startP; famkk < endP; famkk++)
 		{
 			temP_fami = o_dat.op_getFami(famkk);
 			numNodeOfFam = temP_fami->getNumNode();
 			Nid_k = temP_fami->getNodeID(0);
+			(count[Nid_k - 1])++;
 			C = new Matrix(3, 2 * numNodeOfFam);
 			uk = new Vector(2 * numNodeOfFam);
 			matC2D(C, temP_fami, o_dat);
@@ -2972,11 +3040,12 @@ void pdsolve::calPDNodeStresses(datModel & o_dat)
 		sigma = new Vector(6);
 		int numNodeOfFam, Nid_m, Nid_k;
 		double tempu;
-		for (int famkk = 0; famkk < o_dat.getTotnumFami(); famkk++)
+		for (int famkk = startP; famkk < endP; famkk++)
 		{
 			temP_fami = o_dat.op_getFami(famkk);
 			numNodeOfFam = temP_fami->getNumNode();
 			Nid_k = temP_fami->getNodeID(0);
+			(count[Nid_k - 1]) = count[Nid_k - 1] + 1;
 			C = new Matrix(6, numDime * numNodeOfFam);
 			uk = new Vector(numDime * numNodeOfFam);
 			matC3D(C, temP_fami, o_dat);
@@ -3005,6 +3074,10 @@ void pdsolve::calPDNodeStresses(datModel & o_dat)
 
 void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 {
+	int totNumFE, startP, endP;
+	totNumFE = o_dat.civ_feIDX.size();
+	startP = ci_rank * totNumFE / ci_numProce;
+	endP = (ci_rank + 1) * totNumFE / ci_numProce;
 	////====extrapolation method===
 	int numDime = o_dat.ci_Numdimen;
 	if (numDime == 3)
@@ -3033,23 +3106,24 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 			}
 		}
 		//===get stresses of each fem elements
-		int algoType, numNodeEle, * conNID;
+		int algoType, numNodeEle, * conNID, ele;
 		Vector* Ue, * Nsig[6];
 		for (int i = 0; i < 6; i++)
 		{
 			Nsig[i] = new Vector(8);
 		}
 		double(*xN)[3], tempu;
-		for (int k = 0; k < o_dat.getTotnumEle(); k++)
+		for (int fe = startP; fe < endP; fe++)
 		{
-			algoType = o_dat.op_getEles(k)->getAlgoType();
-			if (algoType == 2)
+			ele = o_dat.civ_feIDX[fe];
+			//algoType = o_dat.op_getEles(k)->getAlgoType();
+			//if (algoType == 2)
 			{
-				numNodeEle = o_dat.op_getEles(k)->getNumNodes();
+				numNodeEle = o_dat.op_getEles(ele)->getNumNodes();
 				Ue = new Vector(numDime * numNodeEle);
 				xN = new double[numNodeEle][3];
 				conNID = new int[numNodeEle];
-				o_dat.op_getEles(k)->getConNid(conNID);
+				o_dat.op_getEles(ele)->getConNid(conNID);
 				for (int nd = 0; nd < numNodeEle; nd++)
 				{
 					o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
@@ -3060,7 +3134,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 					}
 					count[conNID[nd] - 1] = count[conNID[nd] - 1] + 1;
 				}
-				o_dat.op_getEles(k)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
+				o_dat.op_getEles(ele)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
 
 				for (int nd = 0; nd < 8; nd++)//only calculat the corner values
 				{
@@ -3113,23 +3187,24 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 			}
 		}
 		//===get stresses of each fem elements
-		int algoType, numNodeEle, * conNID;
+		int algoType, numNodeEle, * conNID, ele;
 		Vector* Ue, * Nsig[3];
 		for (int i = 0; i < 3; i++)
 		{
 			Nsig[i] = new Vector(4);
 		}
 		double(*xN)[3], tempu;
-		for (int k = 0; k < o_dat.getTotnumEle(); k++)
+		for (int fe = startP; fe < endP; fe++)
 		{
-			algoType = o_dat.op_getEles(k)->getAlgoType();
-			if (algoType == 2)
+			ele = o_dat.civ_feIDX[fe];
+			//algoType = o_dat.op_getEles(k)->getAlgoType();
+			//if (algoType == 2)
 			{
-				numNodeEle = o_dat.op_getEles(k)->getNumNodes();
+				numNodeEle = o_dat.op_getEles(ele)->getNumNodes();
 				Ue = new Vector(numDime * numNodeEle);
 				xN = new double[numNodeEle][3];
 				conNID = new int[numNodeEle];
-				o_dat.op_getEles(k)->getConNid(conNID);
+				o_dat.op_getEles(ele)->getConNid(conNID);
 				for (int nd = 0; nd < numNodeEle; nd++)
 				{
 					o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
@@ -3140,7 +3215,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 					}
 					count[conNID[nd] - 1] = count[conNID[nd] - 1] + 1;
 				}
-				o_dat.op_getEles(k)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
+				o_dat.op_getEles(ele)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
 				for (int nd = 0; nd < 4; nd++)//only calculat the corner values
 				{
 					for (int si = 0; si < 2; si++)
@@ -3370,40 +3445,54 @@ void pdsolve::calGlobalNodeStresses(datModel & o_dat)
 	int numDime = o_dat.ci_Numdimen;
 	int totNumNODE = o_dat.getTotnumNode();
 	int *count = new int[totNumNODE];
+	int* gloCount = new int[totNumNODE];
+	double* glosig = new double[6 * totNumNODE];
 	for (int i = 0; i < totNumNODE; i++)
 	{
-		if (o_dat.op_getNode(i)->getNodeType())
+		gloCount[i] = 0;
+		count[i] = 0;
+		/*if (o_dat.op_getNode(i)->getNodeType())
 		{
 			count[i] = 1;
 		}
 		else
 		{
 			count[i] = 0;
-		}
+		}*/
 		for (int j = 0; j < 6; j++)
 		{
 			o_dat.op_getNode(i)->setStress(j, 0);
+			glosig[i * 6 + j] = 0;
 		}
 	}
 	//=== cal PD node stress by PD algorithem;
-	calPDNodeStresses(o_dat); // be caution, always do PD node first;
-	//=======================================================================
-	//=======================================================================
-	//==================FEM nodal stress=====================================
-	//=======================================================================
-	//=======================================================================
-	////====extrapolation method===
+	calPDNodeStresses(o_dat,count); // be caution, always do PD node first;
+	/*=====================================================================
+	=======================================================================
+	==================FEM nodal stress=====================================
+	=======================================================================
+	=======================================================================*/
+	/*====extrapolation method===*/
 	calFEMNodeStresses_EXP(o_dat, count);
-	////====LSM method===
+	/*====LSM method===*/
 	//calFEMNodeStresses_LSM(o_dat, count);
 
-
-	//====get average stress=============;
-	for (int i = 0; i < totNumNODE; i++)
+	//=============
+	MPI_Reduce(count, gloCount, totNumNODE, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Reduce(o_dat.cop_datLev2->cdp_sigma, glosig, 6 * totNumNODE, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	double* tempSig = o_dat.cop_datLev2->cdp_sigma;
+	o_dat.cop_datLev2->cdp_sigma = glosig;
+	delete[] tempSig; tempSig = NULL; /*Caution here;*/
+	/*====get average stress=============;*/
+	if (ci_rank==0)
 	{
-		o_dat.op_getNode(i)->calAverageStress(count[i]);
+		for (int i = 0; i < totNumNODE; i++)
+		{
+			o_dat.op_getNode(i)->calAverageStress(gloCount[i]);
+		}
 	}
-	delete[] count;
+	delete[] count, gloCount; 
+	count = NULL, gloCount = NULL;
 }
 
 void pdsolve::postProcessing(datModel & o_dat, ofstream & test)

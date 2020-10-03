@@ -1,8 +1,9 @@
 #include "pdNode.h"
 
 
-pdNode::pdNode(int id, double x[])
+pdNode::pdNode(int id, double x[],dataLev2*p_datLev2)
 {
+	cop_datLev2 = p_datLev2;
 	ci_NodeId = id;
 	for (int i = 0; i < 3; i++)
 	{
@@ -12,9 +13,10 @@ pdNode::pdNode(int id, double x[])
 	cd_dv = 0;
 	ci_nodeType = 0;
 	ci_famID = -1;
-	for (int i = 0; i < 3; i++)
+	//cdp_sigma = &(cop_datLev2->cdp_sigma[6 * (id - 1)]);
+	for (int i = 0; i < 6; i++)
 	{
-		cd_sigma[i] = 0;
+		(cop_datLev2->cdp_sigma[6 * (id - 1) + i]) = 0;
 	}
 	cd_localDamage = 0;
 }
@@ -47,6 +49,11 @@ double pdNode::getvolume() const
 	return cd_dv;
 }
 
+void pdNode::setVolume(double dv)
+{
+	cd_dv = dv;
+}
+
 void pdNode::addvolume(double dv)
 {
 	cd_dv = cd_dv + dv;
@@ -72,16 +79,21 @@ void pdNode::printStress(ofstream & fout)
 	fout <<  cd_x[0] << "\t" << cd_x[1] << "\t" << cd_x[2];
 	for (int i = 0; i < 6; i++)
 	{
-		fout << "\t" << cd_sigma[i];
+		fout << "\t" << (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]);
 	}
 	fout << endl;
 }
 
 void pdNode::printStressTensor_vtk(ofstream& fout)
 {
-	fout << cd_sigma[0] << ' ' << cd_sigma[3] << ' ' << cd_sigma[5] << endl;
-	fout << cd_sigma[3] << ' ' << cd_sigma[1] << ' ' << cd_sigma[4] << endl;
-	fout << cd_sigma[5] << ' ' << cd_sigma[4] << ' ' << cd_sigma[2] << endl;
+	double cdp_sigma[6];
+	for (int i = 0; i < 6; i++)
+	{
+		cdp_sigma[i] = (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]);
+	}
+	fout << cdp_sigma[0] << ' ' << cdp_sigma[3] << ' ' << cdp_sigma[5] << endl;
+	fout << cdp_sigma[3] << ' ' << cdp_sigma[1] << ' ' << cdp_sigma[4] << endl;
+	fout << cdp_sigma[5] << ' ' << cdp_sigma[4] << ' ' << cdp_sigma[2] << endl;
 }
 
 
@@ -132,26 +144,28 @@ int pdNode::getFamID() const
 
 void pdNode::setStress(int i, double val)
 {
-	cd_sigma[i] = val;
+	(cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]) = val;
 }
 
 void pdNode::getStress(double sigma[])
 {
 	for (int i = 0; i < 6; i++)
 	{
-		sigma[i] = cd_sigma[i];
+		sigma[i] = (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]);
 	}
 }
 
 void pdNode::addStress(int i, double val)
 {
-	cd_sigma[i] = cd_sigma[i] + val;
+	(cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]) =
+		(cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]) + val;
 }
 
 void pdNode::calAverageStress(int count)
 {
 	for (int i = 0; i < 6; i++)
 	{
-		cd_sigma[i] = cd_sigma[i] / count;
+		(cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]) =
+			(cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]) / count;
 	}
 }
