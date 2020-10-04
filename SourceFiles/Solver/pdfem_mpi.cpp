@@ -39,7 +39,7 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	{
 		cout << "PDLSM-FEM solving........." << endl;
 		t1= MPI_Wtime();
-	}	
+	}
 	pdsolve o_sol(o_modeldata, ci_rank, ci_numProce);
 	o_sol.pdfemStaticSolver_CSRformat(o_modeldata);
 	if (ci_rank==0)

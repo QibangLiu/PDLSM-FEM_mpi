@@ -93,9 +93,9 @@ void pdsolve::setDatModel(datModel& o_dat)
 	// below is order dependent;
 	setFEID_PDEID(o_dat);
 	findDomainDimen(o_dat);
+	calVolumeOfNode(o_dat);
 	setPDNODEandnumFami(o_dat);
 	Setdof_Index(o_dat);
-	calVolumeOfNode(o_dat);
 	setDeltaMaxMin(o_dat);
 	setBlockAndFami(o_dat);
 	if (ci_rank == 0)
@@ -185,8 +185,8 @@ void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 			delete[] conNID; conNID = NULL;
 		}
 	}
-	/*============*/
-
+	/*====get pd node list and the number====*/
+	/*Caution: also set the node famyID here*/
 	int numFami = 0;
 	for (int k = 0; k < o_dat.getTotnumNode(); k++)
 	{
@@ -194,6 +194,7 @@ void pdsolve::setPDNODEandnumFami(datModel& o_dat)
 		{
 			numFami = numFami + 1;
 			o_dat.civ_pdNodeIDX.push_back(k);
+			o_dat.op_getNode(k)->setFamID(numFami);
 		}
 	}
 	o_dat.SetNumFamilies(numFami);
@@ -385,20 +386,45 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	//===allocate Nodes into block
 	int blockIndex, i_bIndex[3];
 	double xnode[3];
-	for (int k = 0; k < o_dat.getTotnumNode(); k++)
+	if (ci_PDBN_ITA_flag==0)
 	{
-		if (o_dat.op_getNode(k)->getNodeType())
+		for (int k = 0; k < o_dat.getTotnumNode(); k++)
 		{
+			//only pd node;
+			if (o_dat.op_getNode(k)->getNodeType())
+			{
+				o_dat.op_getNode(k)->getcoor(xnode);
+				for (int i = 0; i < 3; i++)
+				{
+					i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
+				}
+				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+					i_bIndex[2] * numBlocks[0] * numBlocks[1];
+				o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
+			}
+		}
+	}
+	else if (ci_PDBN_ITA_flag==1)
+	{
+		for (int k = 0; k < o_dat.getTotnumNode(); k++)
+		{
+			// all node;
 			o_dat.op_getNode(k)->getcoor(xnode);
 			for (int i = 0; i < 3; i++)
 			{
 				i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
 			}
-			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] + 
+			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
 				i_bIndex[2] * numBlocks[0] * numBlocks[1];
 			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
 		}
 	}
+	else
+	{
+		printf("ERROR: PD node iteraction flag must be 1 or 1.\n");
+		exit(0);
+	}
+	
 	//==allocate element into block;
 	int AlgoType, * conNID, numNele;
 	double eleCen[3], (*xN)[3], *N;
@@ -434,62 +460,85 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 		}
 	}
 	//===============set families===============================
+	/*===parallize===*/
+	int totNumPDN, startP, endP, nd;
+	totNumPDN = o_dat.civ_pdNodeIDX.size();
+	startP = ci_rank * totNumPDN / ci_numProce;
+	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
+	//=====
 	double delta_k, delta_j;
 	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
 	double dist;//distance between MPx, cx
 	int numNodeoB, NodeIDoB, numDimen, maxDel;
 	numDimen = o_dat.ci_Numdimen;
 	maxDel = o_dat.op_getGeomP()->getmaxDelta();
-	int countFam = 0;
-	for (int kk = 0; kk < o_dat.getTotnumNode(); kk++)
+	//int countFam = 0;
+	for (int famk = startP; famk < endP; famk++)
 	{
-		if (o_dat.op_getNode(kk)->getNodeType())
+		nd = o_dat.civ_pdNodeIDX[famk];
+		//delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDimen);
+		delta_k = o_dat.op_getFami(famk)->gethorizon();
+		o_dat.op_getNode(nd)->getcoor(cx);
+		o_dat.op_getFami(famk)->putNodeIntoFami(nd + 1);
+		//set fam ID of node; moved to setPDNODEandnumFami()function;
+		//o_dat.op_getNode(nd)->setFamID(famk + 1);
+		for (int i = 0; i < 3; i++)
 		{
-			delta_k = fac * pow((o_dat.op_getNode(kk)->getvolume()), 1.0 / numDimen);
-			o_dat.op_getNode(kk)->getcoor(cx);
-			o_dat.op_getFami(countFam)->sethorizon(delta_k);
-			o_dat.op_getFami(countFam)->setID(countFam + 1);
-			o_dat.op_getFami(countFam)->putNodeIntoFami(kk + 1);
-			//set fam ID of node;
-			o_dat.op_getNode(kk)->setFamID(countFam + 1);
-			for (int i = 0; i < 3; i++)
+			i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
+		}
+		for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
+		{
+			for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
 			{
-				i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
-			}
-			for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
-			{
-				for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
+				for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
 				{
-					for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
+					if (xIdex >= 0 && xIdex < (numBlocks[0]) &&
+						yIdex >= 0 && yIdex < (numBlocks[1]) &&
+						zIdex >= 0 && zIdex < (numBlocks[2]))
 					{
-						if (xIdex >= 0 && xIdex < (numBlocks[0]) && 
-							yIdex>=0 && yIdex < (numBlocks[1])&&
-							zIdex >= 0 && zIdex < (numBlocks[2]))
+						blockIndex = xIdex + yIdex * numBlocks[0] +
+							zIdex * numBlocks[0] * numBlocks[1];
+						numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
+						for (int ii = 0; ii < numNodeoB; ii++)
 						{
-							blockIndex = xIdex + yIdex * numBlocks[0] +
-								zIdex * numBlocks[0] * numBlocks[1];
-							numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
-							for (int ii = 0; ii < numNodeoB; ii++)
+							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
+							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
+							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
+							dist = sqrt((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
+								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
+							if ((dist > maxDel * 1.0E-16 && dist < (delta_k + maxDel * 1.0E-15)
+								|| dist> maxDel * 1.0E-16 && dist < (delta_j + maxDel * 1.0E-15)))
 							{
-								NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
-								o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
-								delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
-								dist = sqrt((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
-									+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
-								if ((dist> maxDel*1.0E-16&&dist < (delta_k + maxDel*1.0E-15) 
-									|| dist> maxDel * 1.0E-16 && dist < (delta_j + maxDel*1.0E-15)))
-								{
-									o_dat.op_getFami(countFam)->putNodeIntoFami(NodeIDoB);
-								}
+								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
 							}
 						}
 					}
 				}
 			}
-			countFam = countFam + 1;
-		}//end if pd node
+		}
+		
 	}
 
+	//==== sent and receive data;
+	int LocSP, LocEP;
+	int* numNDofFam = new int[totNumPDN];
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		LocSP = rank * totNumPDN / ci_numProce;
+		LocEP = (rank + 1) * totNumPDN / ci_numProce;
+		for (int famk = LocSP; famk < LocEP; famk++)
+		{
+			//==== sent and receive data;
+			numNDofFam[famk] = o_dat.op_getFami(famk)->civ_NID.size();
+			MPI_Bcast(&(numNDofFam[famk]), 1, MPI_INT, rank, MPI_COMM_WORLD);
+			o_dat.op_getFami(famk)->civ_NID.resize(numNDofFam[famk]);
+			MPI_Bcast(&(o_dat.op_getFami(famk)->civ_NID[0]), numNDofFam[famk],
+				MPI_INT, rank, MPI_COMM_WORLD);
+		}
+	}
+	//release memory;
+	delete[]numNDofFam; numNDofFam = NULL;
+	o_dat.civ_pdNodeIDX.clear();
 	//initial bond state;
 	for (int k = 0; k < o_dat.getTotnumFami(); k++)
 	{

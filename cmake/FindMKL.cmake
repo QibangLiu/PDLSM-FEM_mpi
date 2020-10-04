@@ -7,18 +7,17 @@
 #
 
 find_path(MKL_INCLUDE_DIR mkl_dfti.h HINTS $ENV{MKLROOT}/include)
-find_path(FFTW_INCLUDE_DIR fftw.h HINTS $ENV{MKLROOT}/include/fftw)
-set(MKL_INCLUDE_DIR ${MKL_INCLUDE_DIR} ${FFTW_INCLUDE_DIR})
-#message(STAUS "==${MKL_INCLUDE_DIR}")
+#find_path(FFTW_INCLUDE_DIR fftw.h HINTS $ENV{MKLROOT}/include/fftw)
+set(MKL_INCLUDE_DIR ${MKL_INCLUDE_DIR})
+#message(STAUS "==$ENV{MKLROOT}")
 
 if(WIN32)
     file(GLOB  MKL_LIBRARY 
     #$ENV{MKLROOT}/lib/intel64/mkl_rt.lib
+    $ENV{MKLROOT}/lib/intel64/mkl_intel_ilp64.lib
     $ENV{MKLROOT}/lib/intel64/mkl_core.lib
-    #$ENV{MKLROOT}/lib/intel64/mkl_intel_ilp64.lib
-    $ENV{MKLROOT}/lib/intel64/mkl_intel_lp64.lib
-    #$ENV{MKLROOT}/lib/intel64/mkl_intel_thread.lib
-    $ENV{MKLROOT}/lib/intel64/mkl_sequential.lib)
+    $ENV{MKLROOT}/lib/intel64/mkl_sequential.lib
+    $ENV{MKLROOT}/lib/intel64/mkl_blacs_mpich2_ilp64.lib)
 elseif(UNIX)
     file(GLOB  MKL_LIBRARY 
     $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.so

@@ -261,9 +261,17 @@ void datModel::allocaMemoryFami()
 {
 	/*allocate memory for famlilys*/
 	cop2_FamiOfNode = new pdFamily * [ci_numFami];
-	for (int i = 0; i < ci_numFami; i++)
+	double fac = cop_geomp->getFactor();
+	int nd;
+	double delta_k;
+	for (int famk = 0; famk < ci_numFami; famk++)
 	{
-		cop2_FamiOfNode[i] = new pdFamily();
+		cop2_FamiOfNode[famk] = new pdFamily();
+		cop2_FamiOfNode[famk]->setID(famk + 1);
+		nd = civ_pdNodeIDX[famk];
+		delta_k = fac * pow((cop2_Node[nd]->getvolume()), 1.0 / ci_Numdimen);
+		cop2_FamiOfNode[famk]->sethorizon(delta_k);
+
 	}
 	if (cop2_FamiOfNode == NULL)
 	{

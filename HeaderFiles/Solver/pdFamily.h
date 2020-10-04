@@ -20,10 +20,12 @@ public:
 	int getbondstate(int m);
 	void setbondstate(int m, int val);
 	vector<int> GetvecNid();
+
+public:
+	vector<int>civ_NID;
 private: 
 	double cd_delta;
 	int ci_famID;
-	vector<int>civ_NID;
 	int *cip_bondState;//bond state ;
 	
 };

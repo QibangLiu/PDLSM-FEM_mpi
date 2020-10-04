@@ -22,9 +22,9 @@ public:
 	void setDatModel(datModel& o_dat); // set the data model, must be called before solving;
 	void setFEID_PDEID(datModel& o_dat);//set the FE id and PDE id for each cores;
 	void findDomainDimen(datModel &o_dat);// get the domain dimension size;
+	void calVolumeOfNode(datModel& o_dat);// calculate volume of pd node;
 	void setPDNODEandnumFami(datModel& o_dat);// set the node type and memory allocate for family;
 	void Setdof_Index(datModel& o_dat);//set each dof's equation position;
-	void calVolumeOfNode(datModel& o_dat);// calculate volume of pd node;
 	void setDeltaMaxMin(datModel& o_dat);// find out the max and min Delta;
 	void setBlockAndFami(datModel& o_dat);// initialize block;
 	//============PD algorithem===============================================;
