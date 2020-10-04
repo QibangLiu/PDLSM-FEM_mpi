@@ -53,5 +53,4 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 
 		cout << "PDLSM-FEM program finished." << endl;
 	}
-	
 }

@@ -16,6 +16,7 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	ci_solvFlag = -1;
 	ci_PDBN_ITA_flag = 0;
 	//===set data model ==================================
+	
 	setDatModel(o_dat);
 	//============================D matrix=================
 	int prob_type = o_dat.getProType();
@@ -90,6 +91,7 @@ void pdsolve::setDatModel(datModel& o_dat)
 	{
 		printf("Setting data model......\n");
 	}
+	
 	// below is order dependent;
 	setFEID_PDEID(o_dat);
 	findDomainDimen(o_dat);
