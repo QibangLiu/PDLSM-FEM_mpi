@@ -34,6 +34,8 @@ public:
 	void shapeFunctionQuad4N(double N[], double p, double q);
 	void matMathcalNt(Matrix* mNt, double p, double q);
 	void matN_trans(Matrix* Nmat, double xN[][3], double p, double q);
+	void matMathcalNtN(Matrix* mNtN[],Matrix *mNt[],double xN[][3]);//PDBEs of triangle elements
+	void matMathcalNt_trian(Matrix* mNt[]);//PDBEs of triangle elements
 	//functions for 2D===
 	void shapTens2D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
 	void vec_gd2D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
@@ -54,6 +56,8 @@ public:
 	//====CSR format===
 	void assembleInterWorkPD_CSRformat(datModel& o_dat);
 	void assemblePDBEwork_CSRformat(datModel& o_dat);
+	void assemblePDBEworkQuad_CSRformat(datModel& o_dat);
+	void assemblePDBEworkTetrahe_CSRformat(datModel& o_dat);
 	void assembleMassMatPD_CSRformat(datModel& o_dat); //PD node mass;
 	//=======================================================================
 	//========================FEM algorithem=================================

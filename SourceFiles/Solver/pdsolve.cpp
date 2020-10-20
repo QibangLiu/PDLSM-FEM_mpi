@@ -435,21 +435,22 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 		AlgoType = o_dat.op_getEles(ele)->getAlgoType();
 		if (AlgoType == 1)
 		{
-			eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
+			//eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
 			numNele = o_dat.op_getEles(ele)->getNumNodes();
 			conNID = new int[numNele];
 			xN = new double[numNele][3];
 			N = new double[numNele];
 			o_dat.op_getEles(ele)->getConNid(conNID);
-			o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
+			//o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
 			for (int n = 0; n < numNele; n++)
 			{
 				o_dat.op_getNode(conNID[n] - 1)->getcoor(xN[n]);
-				for (int i = 0; i < 3; i++)
+				/*for (int i = 0; i < 3; i++)
 				{
 					eleCen[i] = eleCen[i] + xN[n][i] * N[n];
-				}
+				}*/
 			}
+			o_dat.op_getEles(ele)->eleCenter(eleCen, xN);
 			for (int i = 0; i < 3; i++)
 			{
 				i_bIndex[i] = (eleCen[i] - lbc[i]) / blockSize;
@@ -1906,108 +1907,234 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 	}
 	else if (numDime == 3)
 	{
-		//====================3D===================
-		int nG, conNID[4];
-		int famiID, numNodeFam, eqIndex_row, eqIndex_col;
-		int NID_m;
-		long long int i_temp;
-		double p, q, wp, wq, fac, xN[4][3], temp, tempu;
-		double N[4];//N[4] are shape functions;
-		Matrix* mNt, * Nmat, * C, * f_mNt, * f_mNt_Nm, * f_mNt_Nm_D, * finMat;
-		mNt = new Matrix(12, 3);
-		Nmat = new Matrix(3, 6);
-		f_mNt = new Matrix(12, 3);
-		f_mNt_Nm = new Matrix(12, 6);
-		f_mNt_Nm_D = new Matrix(12, 6);
-		nG = o_globGP.i_getNumPts();
-		//===========3D=======================================
-		for (int pdbe = startP; pdbe < endP; pdbe++)
+		if (o_dat.ci_eleType==12)
 		{
-			//==get PDBEs==
-			o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
-			for (int i = 0; i < 4; i++)
+			assemblePDBEworkQuad_CSRformat(o_dat);
+		}
+		else if (o_dat.ci_eleType==10)
+		{
+			assemblePDBEworkTetrahe_CSRformat(o_dat);
+		}
+		else
+		{
+			printf("ERROR: element Type for 3D must be 10 or 12.\n");
+			exit(0);
+		}
+	}
+}
+
+void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
+{
+	int numPDBEs, startP, endP;
+	numPDBEs = o_dat.getTotnumPDBEs();
+	startP = ci_rank * numPDBEs / ci_numProce;
+	endP = (ci_rank + 1) * numPDBEs / ci_numProce;
+	int numDime = o_dat.ci_Numdimen;
+	pdFamily* temP_fami;
+	
+	//====================3D===================
+	int nG, conNID[4];
+	int famiID, numNodeFam, eqIndex_row, eqIndex_col;
+	int NID_m;
+	long long int i_temp;
+	double p, q, wp, wq, fac, xN[4][3], temp, tempu;
+	double N[4];//N[4] are shape functions;
+	Matrix* mNt, * Nmat, * C, * f_mNt, * f_mNt_Nm, * f_mNt_Nm_D, * finMat;
+	mNt = new Matrix(12, 3);
+	Nmat = new Matrix(3, 6);
+	f_mNt = new Matrix(12, 3);
+	f_mNt_Nm = new Matrix(12, 6);
+	f_mNt_Nm_D = new Matrix(12, 6);
+	nG = o_globGP.i_getNumPts();
+	//===========3D=======================================
+	for (int pdbe = startP; pdbe < endP; pdbe++)
+	{
+		//==get PDBEs==
+		o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
+		for (int i = 0; i < 4; i++)
+		{
+			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+		}
+		//===Gauss integration===
+		for (int mp = 0; mp < nG; mp++)
+		{
+			p = o_globGP.d_getGaussPt(mp);
+			wp = o_globGP.d_getWeight(mp);
+			for (int mq = 0; mq < nG; mq++)
 			{
-				o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-			}
-			//===Gauss integration===
-			for (int mp = 0; mp < nG; mp++)
-			{
-				p = o_globGP.d_getGaussPt(mp);
-				wp = o_globGP.d_getWeight(mp);
-				for (int mq = 0; mq < nG; mq++)
+				q = o_globGP.d_getGaussPt(mq);
+				wq = o_globGP.d_getWeight(mq);
+				shapeFunctionQuad4N(N, p, q);
+				matMathcalNt(mNt, p, q);
+				for (int ei = 0; ei < 4; ei++)
 				{
-					q = o_globGP.d_getGaussPt(mq);
-					wq = o_globGP.d_getWeight(mq);
-					shapeFunctionQuad4N(N, p, q);
-					matMathcalNt(mNt, p, q);
-					for (int ei = 0; ei < 4; ei++)
+					//====get the final matrix for assembling;
+					fac = N[ei] * wp * wq;
+					matoperat.matMultiply(mNt, fac, f_mNt);
+					matN_trans(Nmat, xN, p, q);
+					famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
+					temP_fami = o_dat.op_getFami(famiID - 1);
+					numNodeFam = temP_fami->getNumNode();
+					C = new Matrix(6, 3 * numNodeFam);
+					finMat = new Matrix(12, 3 * numNodeFam);
+					matC3D(C, temP_fami, o_dat);
+					matoperat.matMultiply(f_mNt, Nmat, f_mNt_Nm);
+					matoperat.matMultiply(f_mNt_Nm, cop_D, f_mNt_Nm_D);
+					matoperat.matMultiply(f_mNt_Nm_D, C, finMat);
+					//=======assembling======
+					for (int i = 0; i < 4; i++)
 					{
-						//====get the final matrix for assembling;
-						fac = N[ei] * wp * wq;
-						matoperat.matMultiply(mNt, fac, f_mNt);
-						matN_trans(Nmat, xN, p, q);
-						famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
-						temP_fami = o_dat.op_getFami(famiID - 1);
-						numNodeFam = temP_fami->getNumNode();
-						C = new Matrix(6, 3 * numNodeFam);
-						finMat = new Matrix(12, 3 * numNodeFam);
-						matC3D(C, temP_fami, o_dat);
-						matoperat.matMultiply(f_mNt, Nmat, f_mNt_Nm);
-						matoperat.matMultiply(f_mNt_Nm, cop_D, f_mNt_Nm_D);
-						matoperat.matMultiply(f_mNt_Nm_D, C, finMat);
-						//=======assembling======
-						for (int i = 0; i < 4; i++)
+						for (int j = 0; j < 3; j++)
 						{
-							for (int j = 0; j < 3; j++)
+							eqIndex_row = o_dat.op_getNode(conNID[i] - 1)->op_getDof(j)->i_getEqInde();
+							if (eqIndex_row != -1)
 							{
-								eqIndex_row = o_dat.op_getNode(conNID[i] - 1)->op_getDof(j)->i_getEqInde();
-								if (eqIndex_row != -1)
+								for (int m = 0; m < numNodeFam; m++)
 								{
-									for (int m = 0; m < numNodeFam; m++)
+									NID_m = temP_fami->getNodeID(m);
+									for (int jj = 0; jj < 3; jj++)
 									{
-										NID_m = temP_fami->getNodeID(m);
-										for (int jj = 0; jj < 3; jj++)
+
+										temp = finMat->d_getCoeff(i * 3 + j, 3 * m + jj);
+										if (ci_solvFlag)
 										{
-											
-											temp = finMat->d_getCoeff(i * 3 + j, 3 * m + jj);
-											if (ci_solvFlag)
+											//non-dynamic solver
+											eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+											if (eqIndex_col != -1)
 											{
-												//non-dynamic solver
-												eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
-												if (eqIndex_col != -1)
-												{
-													i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
-													cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-												}
-												else
-												{
-													tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
-													cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
-												}
+												i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+												cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
 											}
 											else
 											{
-												//dynamic solver
 												tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
 												cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
 											}
-											
 										}
+										else
+										{
+											//dynamic solver
+											tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+											cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+										}
+
 									}
 								}
 							}
 						}
-						//===finish assembling for this ei-th node;
-						// delete;
-						delete C, finMat;
-						C = NULL, finMat = NULL;
 					}
+					//===finish assembling for this ei-th node;
+					// delete;
+					delete C, finMat;
+					C = NULL, finMat = NULL;
 				}
 			}
 		}
-		delete mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D;
-		mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
 	}
+	delete mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D;
+	mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
+	
+}
+
+void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
+{
+	int numPDBEs, startP, endP;
+	numPDBEs = o_dat.getTotnumPDBEs();
+	startP = ci_rank * numPDBEs / ci_numProce;
+	endP = (ci_rank + 1) * numPDBEs / ci_numProce;
+	int numDime = o_dat.ci_Numdimen;
+	pdFamily* temP_fami;
+	
+	//====================3D===================
+	int conNID[4];
+	int famiID, numNodeFam, eqIndex_row, eqIndex_col;
+	int NID_m;
+	long long int i_temp;
+	double  xN[4][3], temp, tempu;
+	Matrix* mNt[3], * mNtN[3], * C, * mNt_N_D, * finMat;
+	for (int i = 0; i < 3; i++)
+	{
+		mNt[i] = new Matrix(9, 3);
+		mNtN[i] = new Matrix(9, 6);
+	}
+	matMathcalNt_trian(mNt);
+	mNt_N_D = new Matrix(9, 6);
+	//===========3D=======================================
+	for (int pdbe = startP; pdbe < endP; pdbe++)
+	{
+		//==get PDBEs==
+		o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
+		for (int i = 0; i < 3; i++)
+		{
+			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+		}
+		//=== integration===
+		matMathcalNtN(mNtN, mNt, xN);
+		for (int ei = 0; ei < 3; ei++)
+		{
+			matoperat.matMultiply(mNtN[ei], cop_D, mNt_N_D);
+			famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
+			temP_fami = o_dat.op_getFami(famiID - 1);
+			numNodeFam = temP_fami->getNumNode();
+			C = new Matrix(6, 3 * numNodeFam);
+			finMat = new Matrix(9, 3 * numNodeFam);
+			matC3D(C, temP_fami, o_dat);
+			matoperat.matMultiply(mNt_N_D, C, finMat);
+			//=======assembling======
+			for (int i = 0; i < 3; i++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+					eqIndex_row = o_dat.op_getNode(conNID[i] - 1)->op_getDof(j)->i_getEqInde();
+					if (eqIndex_row != -1)
+					{
+						for (int m = 0; m < numNodeFam; m++)
+						{
+							NID_m = temP_fami->getNodeID(m);
+							for (int jj = 0; jj < 3; jj++)
+							{
+
+								temp = finMat->d_getCoeff(i * 3 + j, 3 * m + jj);
+								if (ci_solvFlag)
+								{
+									//non-dynamic solver
+									eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+									if (eqIndex_col != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+									else
+									{
+										tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+										cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+									}
+								}
+								else
+								{
+									//dynamic solver
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+									cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+								}
+
+							}
+						}
+					}
+				}
+			}
+			//===finish assembling for this ei-th node;
+			// delete;
+			delete C, finMat;
+			C = NULL, finMat = NULL;
+		}
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		delete mNt[i], mNtN[i];
+		mNt[i]=NULL, mNtN[i]=NULL;
+	}
+	delete  mNt_N_D;
+	mNt_N_D = NULL;
 }
 
 void pdsolve::assembleMassMatPD_CSRformat(datModel& o_dat)
@@ -2108,6 +2235,60 @@ void pdsolve::matN_trans(Matrix* Nmat, double xN[][3], double p, double q)
 	Nmat->setCoeff(1, 4, N3);
 	Nmat->setCoeff(2, 4, N2);
 	Nmat->setCoeff(2, 5, N1);
+}
+
+void pdsolve::matMathcalNtN(Matrix* mNtN[], Matrix* mNt[], double xN[][3])
+{
+	Matrix* Nmat = new Matrix(3, 6);
+	double v1[3], v2[3];
+	for (int i = 0; i < 3; i++)
+	{
+		v1[i] = xN[1][i] - xN[0][i];
+		v2[i] = xN[2][i] - xN[0][i];
+	}
+	double N1, N2, N3;
+	N1 = v1[1] * v2[2] - v1[2] * v2[1];
+	N2 = v2[0] * v1[2] - v1[0] * v2[2];
+	N3 = v1[0] * v2[1] - v2[0] * v1[1];
+	Nmat->zero();
+	Nmat->setCoeff(0, 0, N1);
+	Nmat->setCoeff(1, 1, N2);
+	Nmat->setCoeff(2, 2, N3);
+	Nmat->setCoeff(0, 3, N2);
+	Nmat->setCoeff(0, 5, N3);
+	Nmat->setCoeff(1, 3, N1);
+	Nmat->setCoeff(1, 4, N3);
+	Nmat->setCoeff(2, 4, N2);
+	Nmat->setCoeff(2, 5, N1);
+	for (int i = 0; i < 3; i++)
+	{
+		matoperat.matMultiply(mNt[i], Nmat, mNtN[i]);
+	}
+	delete Nmat;
+	Nmat = NULL;
+}
+
+void pdsolve::matMathcalNt_trian(Matrix* mNt[])
+{
+	for (int i = 0; i < 3; i++)
+	{
+		mNt[i]->zero();
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		//==
+		mNt[0]->setCoeff(i, i, 1.0 / 12);
+		mNt[0]->setCoeff(i + 3, i, 1.0 / 24);
+		mNt[0]->setCoeff(i + 6, i, 1.0 / 24);
+		//==
+		mNt[1]->setCoeff(i, i, 1.0 / 24);
+		mNt[1]->setCoeff(i + 3, i, 1.0 / 12);
+		mNt[1]->setCoeff(i + 6, i, 1.0 / 24);
+		//==
+		mNt[2]->setCoeff(i, i, 1.0 / 24);
+		mNt[2]->setCoeff(i + 3, i, 1.0 / 24);
+		mNt[2]->setCoeff(i + 6, i, 1.0 / 12);
+	}
 }
 
 void pdsolve::assembleSEDbyFEM(datModel & o_dat)
@@ -3187,7 +3368,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 				}
 				o_dat.op_getEles(ele)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
 
-				for (int nd = 0; nd < 8; nd++)//only calculat the corner values
+				for (int nd = 0; nd < numNodeEle; nd++)//caution: only calculat the corner values
 				{
 					for (int si = 0; si < 6; si++)
 					{
@@ -3267,7 +3448,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 					count[conNID[nd] - 1] = count[conNID[nd] - 1] + 1;
 				}
 				o_dat.op_getEles(ele)->eleFitStresses(1, Nsig, cop_D, L, Ue, xN);
-				for (int nd = 0; nd < 4; nd++)//only calculat the corner values
+				for (int nd = 0; nd < numNodeEle; nd++)// Caution: only calculat the corner values
 				{
 					for (int si = 0; si < 2; si++)
 					{
@@ -3294,7 +3475,10 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 
 void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 {
-	
+	int totNumFE, startP, endP;
+	totNumFE = o_dat.civ_feIDX.size();
+	startP = ci_rank * totNumFE / ci_numProce;
+	endP = (ci_rank + 1) * totNumFE / ci_numProce;
 	//=============LSM method==========================;
 	int numDime = o_dat.ci_Numdimen;
 	if (numDime==2)
@@ -3333,15 +3517,16 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 		delete[] pp; delete[] qq;
 		pp = NULL; qq = NULL;
 		//===get stresses of each fem elements
-		int algoType, numNodeEle, * conNID;
+		int algoType, numNodeEle, * conNID, ele;
 		Vector* Ue, * Nsig[3];
 		double (*xN)[3], tempu;
-		for (int k = 0; k < o_dat.getTotnumEle(); k++)
+		for (int fe = startP; fe < endP; fe++)
 		{
-			algoType = o_dat.op_getEles(k)->getAlgoType();
-			if (algoType == 2)
+			ele = o_dat.civ_feIDX[fe];
+			/*algoType = o_dat.op_getEles(k)->getAlgoType();
+			if (algoType == 2)*/
 			{
-				numNodeEle = o_dat.op_getEles(k)->getNumNodes();
+				numNodeEle = o_dat.op_getEles(ele)->getNumNodes();
 				Ue = new Vector(numDime * numNodeEle);
 				xN = new double[numNodeEle][3];
 				for (int ii = 0; ii < 3; ii++)
@@ -3349,7 +3534,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 					Nsig[ii] = new Vector(numNodeEle);
 				}
 				conNID = new int[numNodeEle];
-				o_dat.op_getEles(k)->getConNid(conNID);
+				o_dat.op_getEles(ele)->getConNid(conNID);
 				for (int nd = 0; nd < numNodeEle; nd++)
 				{
 					o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
@@ -3360,7 +3545,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 					}
 					count[conNID[nd] - 1] = count[conNID[nd] - 1] + 1;
 				}
-				o_dat.op_getEles(k)->eleFitStresses(2, Nsig, cop_D, fitA, Ue, xN);
+				o_dat.op_getEles(ele)->eleFitStresses(2, Nsig, cop_D, fitA, Ue, xN);
 				for (int nd = 0; nd < numNodeEle; nd++)//only calculat the corner values
 				{
 					o_dat.op_getNode(conNID[nd] - 1)->addStress(0, Nsig[0]->d_getCoeff(nd));
@@ -3436,15 +3621,16 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 		delete[] pp, qq, rr;
 		pp = NULL; qq = NULL; rr = NULL;
 		//===get stresses of each fem elements
-		int algoType, numNodeEle, * conNID;
+		int algoType, numNodeEle, * conNID, ele;
 		Vector* Ue, * Nsig[6];
 		double (*xN)[3], tempu;
-		for (int k = 0; k < o_dat.getTotnumEle(); k++)
+		for (int fe = startP; fe < endP; fe++)
 		{
-			algoType = o_dat.op_getEles(k)->getAlgoType();
-			if (algoType == 2)
+			ele = o_dat.civ_feIDX[fe];
+			/*algoType = o_dat.op_getEles(k)->getAlgoType();
+			if (algoType == 2)*/
 			{
-				numNodeEle = o_dat.op_getEles(k)->getNumNodes();
+				numNodeEle = o_dat.op_getEles(ele)->getNumNodes();
 				Ue = new Vector(numDime * numNodeEle);
 				for (int ii = 0; ii < 6; ii++)
 				{
@@ -3452,7 +3638,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 				}
 				xN = new double[numNodeEle][3];
 				conNID = new int[numNodeEle];
-				o_dat.op_getEles(k)->getConNid(conNID);
+				o_dat.op_getEles(ele)->getConNid(conNID);
 				for (int nd = 0; nd < numNodeEle; nd++)
 				{
 					o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
@@ -3463,7 +3649,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 					}
 					count[conNID[nd] - 1] = count[conNID[nd] - 1] + 1;
 				}
-				o_dat.op_getEles(k)->eleFitStresses(2, Nsig, cop_D, fitA, Ue, xN);
+				o_dat.op_getEles(ele)->eleFitStresses(2, Nsig, cop_D, fitA, Ue, xN);
 				for (int nd = 0; nd < numNodeEle; nd++)
 				{
 					for (int si = 0; si < 6; si++)

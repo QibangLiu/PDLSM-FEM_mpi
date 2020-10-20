@@ -39,7 +39,7 @@ private:
 	pdNode();
 	int ci_NodeId;//Node id;
 	double cd_dv;//volume ;
-	double cd_x[3];//coordinate
+	//double cd_x[3];//coordinate
 	pdDof *cop_dof[3];
 	int ci_famID;
 	//double *cdp_sigma;

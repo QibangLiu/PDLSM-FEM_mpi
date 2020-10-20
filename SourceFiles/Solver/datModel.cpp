@@ -44,9 +44,10 @@ void datModel::readdata(ifstream & fin)
 	//read the material point data 
 	int Nid;
 	double x[3];
-	fin >> ci_numNode >> ci_numEle;
+	fin >> ci_numNode >> ci_numEle >> ci_eleType;
 	cop2_Node = new pdNode*[ci_numNode];
 	cop_datLev2->cdp_sigma = new double[6 * ci_numNode];
+	cop_datLev2->cdp_X = new double[3 * ci_numNode];
 	for (int i = 0; i < ci_numNode; i++)
 	{
 
@@ -61,12 +62,28 @@ void datModel::readdata(ifstream & fin)
 	for (int i = 0; i < ci_numEle; i++)
 	{
 		fin >> Eid >> algoType;
-		
-		for (int j = 0; j < 8; j++)
+		if (ci_eleType==12)//8N brick element
 		{
-			fin >> eleNid[j];
+			for (int j = 0; j < 8; j++)
+			{
+				fin >> eleNid[j];
+			}
+			cop2_Eles[i] = new pdfemEleBrick8N(Eid, eleNid, algoType, cop_datLev2);
 		}
-		cop2_Eles[i] = new pdfemEleBrick8N(Eid, eleNid,algoType);
+		else if (ci_eleType==10)
+		{
+			for (int j = 0; j < 4; j++)
+			{
+				fin >> eleNid[j];
+			}
+			cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNid, algoType, cop_datLev2);
+		}
+		else
+		{
+			printf("ERROR: element type is wrong.\n");
+			exit(0);
+		}
+		
 	}
 	//=============read PD boundary================
 	string s_blank;
@@ -155,7 +172,7 @@ void datModel::readdata(ifstream & fin)
 			{
 				fin >> nbcConNID[k];
 			}
-			cop2_NaturalBC[i]->initialEles(j, nbcConNID, 4);
+			cop2_NaturalBC[i]->initialEles(j, nbcConNID, 4,cop_datLev2);
 		}
 	}
 	//// ===========read crack data;

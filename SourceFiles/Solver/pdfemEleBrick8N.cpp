@@ -3,10 +3,10 @@
 extern calMatrixOperations matoperat;
 extern pdGaussPt o_globGP;
 extern pdGaussPt o_sigGP;
-pdfemEleBrick8N::pdfemEleBrick8N(int id, int *nId, int algoType) :
-	pdfemEles(id, 8, nId, algoType)
+pdfemEleBrick8N::pdfemEleBrick8N(int id, int *nId, int algoType, dataLev2* p_datLev2) :
+	pdfemEles(id, 8, nId, algoType,p_datLev2)
 {
-	if (nId[2]== nId[3]&& nId[4] == nId[5]
+	/*if (nId[2]== nId[3]&& nId[4] == nId[5]
 		&& nId[4] == nId[6] && nId[4] == nId[7])
 	{
 		ci_eleType = 10;
@@ -19,7 +19,7 @@ pdfemEleBrick8N::pdfemEleBrick8N(int id, int *nId, int algoType) :
 	{
 		ci_eleType = 14;
 	}
-	else
+	else*/
 	{
 		ci_eleType = 12;
 	}
@@ -27,6 +27,20 @@ pdfemEleBrick8N::pdfemEleBrick8N(int id, int *nId, int algoType) :
 
 pdfemEleBrick8N::~pdfemEleBrick8N()
 {
+}
+
+void pdfemEleBrick8N::eleCenter(double xc[], double xN[][3])
+{
+	xc[0] = 0; xc[1] = 0; xc[2] = 0;
+	double N[8];
+	shapeFunction(N, 0, 0, 0);
+	for (int n = 0; n < ci_numNodes; n++)
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			xc[i] = xc[i] + xN[n][i] * N[n];
+		}
+	}
 }
 
 void pdfemEleBrick8N::shapeFunction(double N[], double p, double q, double r)
@@ -90,6 +104,7 @@ double pdfemEleBrick8N::detJacobi(double xN[][3], double p, double q, double r)
 
 void pdfemEleBrick8N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matrix* L, Vector* Ue, double xN[][3])
 {
+	// Nsigma[0][8]--sig_x[8],Nsigma[1]--sig_y....
 	if (flag==1)
 	{
 		//===================extrapolation method

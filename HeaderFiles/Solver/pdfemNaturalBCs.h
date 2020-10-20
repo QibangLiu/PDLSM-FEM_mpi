@@ -4,6 +4,7 @@
 #include"Matrix.h"
 #include"calMatrixOperations.h"
 #include"Vector.h"
+#include"dataLev2.h"
 using namespace std;
 class pdfemNaturalBCs
 {
@@ -13,7 +14,7 @@ public:
 	int getNumEle();
 	double getValue();
 	pdfemEles* op_getNBCsEle(int ele);
-	void initialEles(int ele, int conNID[],int eleType);
+	void initialEles(int ele, int conNID[],int eleType, dataLev2* p_datLev2);
 
 	//int** cip2_nbcNID;
 	//int* cip_nbcNormDire;

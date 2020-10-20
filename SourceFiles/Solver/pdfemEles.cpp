@@ -1,7 +1,8 @@
 #include "pdfemEles.h"
 
-pdfemEles::pdfemEles(int id, int numNodes, int *nId,int algoType)
+pdfemEles::pdfemEles(int id, int numNodes, int *nId,int algoType, dataLev2* p_datLev2)
 {
+	cop_datLev2 = p_datLev2;
 	ci_EleId = id;
 	ci_numNodes = numNodes;
 	cip_EleNodeId = new int[numNodes];
@@ -136,4 +137,22 @@ int pdfemEles::getAlgoType() const
 int pdfemEles::getNumNodes() const
 {
 	return ci_numNodes;
+}
+
+double pdfemEles::detMat33(double mat[][3])
+{
+	//==det(J)===
+	double det_J = 0.0;
+	int rr, cc;
+	double ans1, ans2;
+	for (int i = 0; i < 3; i++) {
+		rr = 0, cc = i;
+		ans1 = 1., ans2 = 1.;
+		for (int j = 0; j < 3; j++) {
+			ans1 *= mat[rr + j][(cc + j) % 3];
+			ans2 *= mat[rr + j][(cc - j + 3) % 3];
+		}
+		det_J = det_J + ans1 - ans2;
+	}
+	return (det_J);
 }

@@ -4,8 +4,9 @@ class pdfemEleLine2N :
 	public pdfemEles
 {
 public:
-	pdfemEleLine2N(int id, int* nId, int algoType);
+	pdfemEleLine2N(int id, int* nId, int algoType, dataLev2* p_datLev2);
 	~pdfemEleLine2N();
+	void eleCenter(double xc[], double xN[][3]);
 	void shapeFunction(double N[], double p, double q, double r);
 	void eleStiffMatFEM(Matrix* Ke, Matrix* D, double xN[][3]);
 	void eleMassMat(Matrix* Me, double rho, double xN[][3]);

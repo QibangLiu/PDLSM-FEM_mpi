@@ -5,6 +5,7 @@
 #include"Vector.h"
 #include"calMatrixOperations.h"
 #include"pdGaussPt.h"
+#include"dataLev2.h"
 using namespace std;
 
 /*This class is the parent of elements
@@ -28,15 +29,17 @@ No.	element			vtk_name				ci_eleType
 class pdfemEles
 {
 public:
-	pdfemEles(int id, int numNodes, int *nId, int algoType);
+	pdfemEles(int id, int numNodes, int *nId, int algoType,dataLev2 *p_datLev2);
 	virtual ~pdfemEles();
 	void getConNid(int Nid[]);
 	void print(ofstream &fout);
 	int getNumNodes_vtk()const;
 	int getAlgoType()const;
 	int getNumNodes()const;
-	virtual double detJacobi(double xN[][3], double p, double q, double r) = 0;
-	virtual void shapeFunction(double N[], double p, double q, double r) = 0;
+	double detMat33(double mat[][3]);
+	//virtual double detJacobi(double xN[][3], double p, double q, double r) = 0;
+	//virtual void shapeFunction(double N[], double p, double q, double r) = 0;
+	virtual void eleCenter(double xc[], double xN[][3]) = 0;
 	virtual void eleStiffMatFEM(Matrix* Ke, Matrix *D, double xN[][3]) = 0;
 	virtual void eleMassMat(Matrix* Me,double rho, double xN[][3]) = 0;
 	virtual void eleEquivNodalForce(Vector* Fe, double t, double xN[][3]) = 0;
@@ -52,6 +55,7 @@ public:
 	//-1 is NBCs elements
 	int ci_eleType;
 
+	dataLev2* cop_datLev2;
 private:
 	pdfemEles();
 	

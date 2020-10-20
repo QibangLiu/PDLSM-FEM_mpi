@@ -5,9 +5,9 @@ pdNode::pdNode(int id, double x[],dataLev2*p_datLev2)
 {
 	cop_datLev2 = p_datLev2;
 	ci_NodeId = id;
+	cop_datLev2->setNodeCOOR(id - 1, x);
 	for (int i = 0; i < 3; i++)
 	{
-		cd_x[i] = x[i];
 		cop_dof[i] = new pdDof();
 	}
 	cd_dv = 0;
@@ -37,10 +37,11 @@ int pdNode::getId() const
 
 void pdNode::getcoor(double x[]) const
 {
-	for (int i = 0; i < 3; i++)
+	/*for (int i = 0; i < 3; i++)
 	{
 		x[i] = cd_x[i];
-	}
+	}*/
+	cop_datLev2->getNodeCOOR(ci_NodeId - 1, x);
 }
 
 
@@ -67,16 +68,20 @@ pdDof * pdNode::op_getDof(int i) const
 
 void pdNode::print(ofstream & fout)
 {
+	double xN[3];
+	cop_datLev2->getNodeCOOR(ci_NodeId - 1, xN);
 	fout << std::left << setiosflags(ios::scientific)
 		<< setprecision(5);
-	fout<< ci_NodeId << "\t" << cd_x[0]
-	<< "\t" << cd_x[1] << "\t" << cd_x[2] << endl;
+	fout<< ci_NodeId << "\t" << xN[0]
+	<< "\t" << xN[1] << "\t" << xN[2] << endl;
 }
 
 void pdNode::printStress(ofstream & fout)
 {
+	double xN[3];
+	cop_datLev2->getNodeCOOR(ci_NodeId - 1, xN);
 	fout << ci_NodeId << "\t";
-	fout <<  cd_x[0] << "\t" << cd_x[1] << "\t" << cd_x[2];
+	fout <<  xN[0] << "\t" << xN[1] << "\t" << xN[2];
 	for (int i = 0; i < 6; i++)
 	{
 		fout << "\t" << (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]);
@@ -100,9 +105,11 @@ void pdNode::printStressTensor_vtk(ofstream& fout)
 
 void pdNode::printFinalU(ofstream & PDout)
 {
+	double xN[3];
+	cop_datLev2->getNodeCOOR(ci_NodeId - 1, xN);
 	PDout << std::left << setiosflags(ios::scientific)<< setprecision(4);
-	PDout<< ci_NodeId << "\t" << cd_x[0] << "\t" << cd_x[1]<<
-		"\t" << cd_x[2] << "\t";
+	PDout<< ci_NodeId << "\t" << xN[0] << "\t" << xN[1]<<
+		"\t" << xN[2] << "\t";
 	//PDout << setprecision(8);
 	PDout << cop_dof[0]->d_getValue() << "\t"
 		<< cop_dof[1]->d_getValue() << "\t" << cop_dof[2]->d_getValue() << endl;
@@ -110,6 +117,8 @@ void pdNode::printFinalU(ofstream & PDout)
 
 void pdNode::printDamage(ofstream & fout)
 {
+	double cd_x[3];
+	cop_datLev2->getNodeCOOR(ci_NodeId - 1, cd_x);
 	fout << ci_NodeId;
 	fout << "\t" << cd_x[0] << "\t" << cd_x[1] << "\t" << cd_localDamage << endl;
 }

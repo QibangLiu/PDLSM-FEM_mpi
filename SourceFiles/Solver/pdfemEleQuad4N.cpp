@@ -2,14 +2,28 @@
 extern calMatrixOperations matoperat;
 extern pdGaussPt o_globGP;
 extern pdGaussPt o_sigGP;
-pdfemEleQuad4N::pdfemEleQuad4N(int id, int* nId, int algoType) :
-	pdfemEles(id, 4, nId, algoType)
+pdfemEleQuad4N::pdfemEleQuad4N(int id, int* nId, int algoType, dataLev2* p_datLev2) :
+	pdfemEles(id, 4, nId, algoType,p_datLev2)
 {
 }
 
 pdfemEleQuad4N::~pdfemEleQuad4N()
 {
 
+}
+
+void pdfemEleQuad4N::eleCenter(double xc[], double xN[][3])
+{
+	xc[0] = 0; xc[1] = 0; xc[2] = 0;
+	double N[4];
+	shapeFunction(N, 0, 0, 0);
+	for (int n = 0; n < ci_numNodes; n++)
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			xc[i] = xc[i] + xN[n][i] * N[n];
+		}
+	}
 }
 
 void pdfemEleQuad4N::shapeFunction(double N[], double p, double q, double r)

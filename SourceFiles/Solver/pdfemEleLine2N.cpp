@@ -4,13 +4,17 @@ extern calMatrixOperations matoperat;
 extern pdGaussPt o_globGP;
 
 
-pdfemEleLine2N::pdfemEleLine2N(int id, int* nId, int algoType) :
-	pdfemEles(id, 2, nId, algoType)
+pdfemEleLine2N::pdfemEleLine2N(int id, int* nId, int algoType, dataLev2* p_datLev2) :
+	pdfemEles(id, 2, nId, algoType,p_datLev2)
 {
 
 }
 
 pdfemEleLine2N::~pdfemEleLine2N()
+{
+}
+
+void pdfemEleLine2N::eleCenter(double xc[], double xN[][3])
 {
 }
 

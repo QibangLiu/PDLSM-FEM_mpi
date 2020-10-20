@@ -8,6 +8,7 @@
 #include"pdFamily.h"
 #include "pdfemEleQuad4N.h"
 #include "pdfemEleBrick8N.h"
+#include"pdfemEleTetra4N.h"
 #include<iostream>
 #include<fstream>
 #include<string>
@@ -80,6 +81,7 @@ public:
 	dataLev2* cop_datLev2;
 	string cs_title;
 	int ci_Numdimen;
+	int ci_eleType;//element Type;
 	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
 						//or pure FE node volume, or family setting;
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
@@ -88,6 +90,7 @@ private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;
 	int ci_proType;
+	
 	int ci_numVaryEssenBC;
 	int ci_numNode;//number of material points
 	int ci_numEle;
