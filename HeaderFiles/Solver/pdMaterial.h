@@ -10,6 +10,7 @@ public:
 	double getnu()const;
 	double getrho()const;
 	double getKIc()const;
+	double getSigult()const;
 	void print(ofstream &fout);
 private:
 	pdMaterial();

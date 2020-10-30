@@ -625,11 +625,10 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 	   ipiv = NULL;
    }
 
-   void calMatrixOperations::dSymeEigenV(Matrix * op_a, Vector * op_eigValu, Matrix * op_eigVector)
+   void calMatrixOperations::dSymeEigenV(char jobz,Matrix * op_a, Vector * op_eigValu, Matrix * op_eigVector)
    {
-	   MKL_INT n, lda, info, lwork;
-	   double wkopt;
-	   double* work;
+	   // jobz must be 'V' or 'N', V-- get eigV, N-- don't get eigV;
+	   MKL_INT n, lda, info;
 	   n= op_a->i_getNumRows();
 	   lda = n;
 
@@ -639,19 +638,14 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 
 	   for (int i = 0; i < n; i++)
 	   {
-		   for (int j = 0; j < n; j++)
+		   for (int j = i; j < n; j++)
 		   {
 			   a[i*n + j] = op_a->d_getCoeff(i, j);
 		   }
 	   }
-	   /* Query and allocate the optimal workspace */
-	   lwork = -1;
-	   dsyev("Vectors", "Upper", &n, a, &lda, w, &wkopt, &lwork, &info);
-	   lwork = (MKL_INT)wkopt;
-	   work = (double*)malloc(lwork * sizeof(double));
-
+	 
 	   /* Solve eigenproblem */
-	   dsyev("Vectors", "Upper", &n, a, &lda, w, work, &lwork, &info);
+	   info = LAPACKE_dsyev(LAPACK_ROW_MAJOR, jobz, 'U', n, a, lda, w);
 	   /* Check for convergence */
 	   if (info > 0) {
 		   printf("The algorithm failed to compute eigenvalues.\n");
@@ -661,14 +655,17 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 	   for (int i = 0; i < n; i++)
 	   {
 		   op_eigValu->setCoeff(i, w[i]);
-		   for (int j = 0; j < n; j++)
+		   if (jobz=='V')
 		   {
-			   op_eigVector->setCoeff(i, j, a[i + j * lda]);
+			   for (int j = 0; j < n; j++)
+			   {
+				   op_eigVector->setCoeff(i, j, a[i * lda + j]);
+			   }
 		   }
+		   
 	   }
 
 	   /* Free workspace */
-	   free((void*)work);
 	   delete[] w, a;
 	   w = NULL; a = NULL;
    }

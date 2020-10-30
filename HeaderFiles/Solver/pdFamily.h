@@ -23,9 +23,10 @@ public:
 
 public:
 	vector<int>civ_NID;
+	int* cip_bondState;//bond state ;
 private: 
 	double cd_delta;
 	int ci_famID;
-	int *cip_bondState;//bond state ;
+	
 	
 };

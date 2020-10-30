@@ -9,6 +9,8 @@ fils operations.  files for input and output
 #include<iostream>
 #include<fstream>
 #include<string>
+#include <sstream>
+#include <iterator>
 #include"datModel.h"
 #ifdef _WIN32
 #include <direct.h>
@@ -24,7 +26,10 @@ using namespace std;
 class fioFiles
 {
 public:
-	void writeResults(datModel &o_dat, int wflag);
+	fioFiles(int rank);
+	void CMDfile(datModel& o_dat,ifstream &fin);
+	void excuteCMD(datModel& o_dat, vector<string>& tokens);
+	void writeResults(datModel &o_dat);
 private:
 	void writeUofNode(datModel &o_dat);
 	void writeSigofNode(datModel &o_dat);
@@ -32,5 +37,6 @@ private:
 	void writeResultsPD_vtk(datModel &o_dat);
 	void writeResultsFEM_vtk(datModel& o_dat);
 	void getTitle(datModel &o_dat,char Titl[]);
-
+	int ci_rank;
+	int ci_wflag;//write flag;
 };

@@ -10,7 +10,7 @@
 #include<mpi.h>
 #include<omp.h>
 #include<limits>
-#define pi  3.141592653589793
+//#define pi  3.141592653589793
 using namespace std;
 class pdsolve
 {
@@ -29,6 +29,7 @@ public:
 	void setBlockAndFami(datModel& o_dat);// initialize block;
 	//============PD algorithem===============================================;
 	//====some auxiliary functions
+	bool segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3]);
 	long long int findCSRIndexOfMat(int rowIndex, int colIndex);
 	double calArea(double vec1[], double vec2[]);
 	void shapeFunctionQuad4N(double N[], double p, double q);
@@ -48,7 +49,9 @@ public:
 	void matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
 	void matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
 	void matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
+
 	//functions for 2D && 3D====
+	void initialBondState(datModel& o_dat);
 	double inflFunc(double xi[], pdFamily* p_fami, datModel& o_dat);
 	void assembleInterWorkPD(datModel& o_dat);
 	void assemblePDBEwork(datModel& o_dat);
@@ -70,7 +73,6 @@ public:
 	void calExternalForce(datModel& o_dat); // calcule equivalent extern nodal force;
 	void assembleSEDbyFEM_CSRformat(datModel& o_dat);//CSR ---assemble strain energy density by fem ;
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
-	void assembleElemassMatFEM_CSRformat(datModel& o_dat);//CSR ---element mass ;
 	//===========Solvers================================
 	//===================================
 	//====static solver==================
@@ -86,10 +88,14 @@ public:
 	//===dynamical solver================
 	//===================================
 	//==CSR format
+	void assembleElemassMatFEM_CSRformat(datModel& o_dat);//CSR ---element mass ;
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
 	void calResultantForce_CSRformat(datModel& o_dat, int numEq);
 	void pdfemDynamicSolver_CSRformat(datModel& o_dat);
+	//==failure criterion
+	double failureCriterion_stretch(datModel& o_dat);
+	double failureCriterion_stress(datModel& o_dat);
 
 	void setPrescribeVaryDis(datModel&o_dat);
 	void set_step_DispBC_qusia_static(datModel& o_dat);
@@ -134,12 +140,12 @@ private:
 	int ci_rank, ci_numProce;
 
 	//============================================
-	//==============FLAGs ========================
-	//===solver;
-	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
-	// PD node on the interface, interact with node in fem domain or not
-	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
-	//=============END flags=========================
+	////==============FLAGs ========================
+	////===solver;
+	//int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
+	//// PD node on the interface, interact with node in fem domain or not
+	//int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	////=============END flags=========================
 	//============================================
 
 	//==material constants;

@@ -2,7 +2,100 @@
 #include<iostream>
 using namespace std;
 
-void fioFiles::writeResults(datModel &o_dat, int wflag)
+
+fioFiles::fioFiles(int rank)
+{
+	ci_rank = rank;
+	ci_wflag = 3;
+}
+
+void fioFiles::CMDfile(datModel& o_dat, ifstream& fin)
+{
+	string sentence;
+	vector<string> tokens;
+	while (getline(fin, sentence))
+	{
+		istringstream iss(sentence);
+		copy(istream_iterator<string>(iss), istream_iterator<string>(), back_inserter(tokens));
+		excuteCMD(o_dat, tokens);
+		tokens.clear();
+	}
+
+
+}
+
+void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
+{
+	
+	if (tokens.size() != 0)
+	{
+		if (tokens[0][0] != '#')// not comment cmd;
+		{
+			if (tokens[0]=="MSHFILE")  //input mesh file
+			{
+				ifstream fin;		//fin for input mesh file
+				fin.open(tokens[1]);
+				if (ci_rank == 0)
+				{
+					if (!fin.is_open())
+					{
+						printf("File %s is not exist\n", tokens[1]);
+						exit(0);
+					}
+				}
+				printf("Reading data on %d-th core....\n", ci_rank);
+				o_dat.readdata(fin);
+			}
+			else if (tokens[0] == "SOLVER") //solver cmd
+			{
+				if (tokens.size()<2)
+				{
+					if (ci_rank==0)
+					{
+						printf("Miss solver. \n");
+						exit(0);
+					}
+				}
+				else
+				{
+					if (tokens[1]=="DYNAMIC")
+					{
+						o_dat.ci_solvFlag == 0;
+					}
+					else if (tokens[1] == "STATIC")
+					{
+						o_dat.ci_solvFlag == 1;
+					}
+					else if (tokens[1] == "QUASI-STATIC")
+					{
+						o_dat.ci_solvFlag == 2;
+					}
+					else
+					{
+						if (ci_rank == 0)
+						{
+							printf("Don't exist command of %s.\n", tokens[1]);
+							exit(0);
+						}
+					}
+				}
+			}
+			else
+			{
+				if (ci_rank == 0)
+				{
+					printf("Don't exist command of %s.\n", tokens[0]);
+					exit(0);
+				}
+			}
+			
+		}
+
+
+	}
+}
+
+void fioFiles::writeResults(datModel &o_dat)
 {
 	struct stat info;
 	char s_path[_MAX_PATH];
@@ -27,16 +120,16 @@ void fioFiles::writeResults(datModel &o_dat, int wflag)
 			mkdir(s_path);
 		#endif
 	}
-	if (wflag==1)
+	if (ci_wflag==1)
 	{
 		writeReslutsTOTAL_vtk(o_dat);
 	}
-	else if (wflag==2)
+	else if (ci_wflag ==2)
 	{
 		writeResultsPD_vtk(o_dat);
 		writeResultsFEM_vtk(o_dat);
 	}
-	else if (wflag==3)
+	else if (ci_wflag ==3)
 	{
 		writeReslutsTOTAL_vtk(o_dat);
 		writeResultsPD_vtk(o_dat);

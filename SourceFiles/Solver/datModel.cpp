@@ -8,6 +8,9 @@ datModel::datModel()
 	//=====inital data=====
 	cop2_Block = NULL;
 	cop_datLev2 = new dataLev2();
+	//=====initial flages;
+	ci_solvFlag = -1;
+	ci_PDBN_ITA_flag = 0;
 }
 
 datModel::~datModel()
@@ -464,10 +467,7 @@ int datModel::getNumCrack() const
 	return ci_numCrack;
 }
 
-double* datModel::op_getcrack(int i)
-{
-	return cdp2_crack[i];
-}
+
 
 void datModel::writeLocalDamage(ofstream & fout)
 {

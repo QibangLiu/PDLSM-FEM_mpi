@@ -39,7 +39,7 @@ public:
 	//===Using PLU descomposition to solve Ax=b 
 	void PLUSolve(Matrix *op_a, Vector *op_b, Vector* op_x);
 	//===get square real symmetrical matrix eigenvalue and vector
-	void dSymeEigenV(Matrix *op_a, Vector *op_eigValu, Matrix*op_eigVector);
+	void dSymeEigenV(char jobz, Matrix *op_a, Vector *op_eigValu, Matrix*op_eigVector);
 	//===PARDISO solver==========
 	void PARDISOsolveSparse(Matrix * o_A, Vector * o_b, Vector* o_x);
 	void PARDISO_64Solver(long long int& mkli_n, long long int* mkli_ia, long long int* mkli_ja, 

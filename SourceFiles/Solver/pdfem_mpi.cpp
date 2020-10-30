@@ -9,11 +9,12 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	MPI_Comm_rank(MPI_COMM_WORLD, &ci_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &ci_numProce);
 
-
+	//reading data to data model==========================
+	fioFiles o_files(ci_rank);
+	datModel o_modeldata;
 	//===========input file=======
 	ifstream fin;		//fin for input file
 	char* ifName = argv[1];
-	//string ifName = "Cubic_ebcFEM.lis";
 	fin.open(ifName);
 	if (ci_rank==0)
 	{
@@ -23,15 +24,8 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 			exit(0);
 		}
 	}
-	
-
-	//====write results flag;
-	int wflag = 3;
-	//reading data to data model==========================
-	datModel o_modeldata;
-	printf("Reading data on %d-th core of %d....\n", ci_rank, ci_numProce);
-	o_modeldata.readdata(fin);
-	
+	o_files.CMDfile(o_modeldata, fin);
+	fin.close();
 	//o_modeldata.writeData();
 	//===========solving===========================
 	double t1, t2;
@@ -45,11 +39,12 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	if (ci_rank==0)
 	{
 		double t2 = MPI_Wtime();
-		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", t2 - t1, argv[1]);
+		const char *proName = o_modeldata.cs_title.c_str();
+		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", proName, t2 - t1);
 		//===========post processing=====================
 		printf("writing results.......\n");
-		fioFiles o_files;
-		o_files.writeResults(o_modeldata, wflag);
+		
+		o_files.writeResults(o_modeldata);
 
 		cout << "PDLSM-FEM program finished." << endl;
 	}

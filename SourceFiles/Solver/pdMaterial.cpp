@@ -33,6 +33,13 @@ double pdMaterial::getKIc() const
 	return cd_KIc;
 }
 
+double pdMaterial::getSigult() const
+{
+	return cd_sigmaUlt;
+}
+
+
+
 void pdMaterial::print(ofstream & fout)
 {
 	fout << "          Young's modules=" << cd_e << endl;

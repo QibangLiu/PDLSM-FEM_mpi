@@ -23,10 +23,12 @@
 #include"dataLev2.h"
 #include<vector>
 
-#define pi  3.141592653589793
+//#define pi  3.141592653589793
 //const double pi = acos(-1.0);
 
 using namespace std;
+
+
 class datModel
 {
 public:
@@ -53,7 +55,6 @@ public:
 	double getTstep()const;
 	int getSaveFreq()const;
 	int getNumCrack()const;
-	double* op_getcrack(int i);
 
 	int getProType()const;
 	int getTotnumVaryEssenBC()const;
@@ -86,6 +87,17 @@ public:
 						//or pure FE node volume, or family setting;
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
 	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function;
+
+	//==crack
+	int ci_numCrack;
+	double (*cdp_crack)[3][3];
+	//============================================
+	//==============FLAGs ========================
+	//===solver;
+	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
+	// PD node on the interface, interact with node in fem domain or not
+	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	//=============END flags=========================
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;
@@ -101,8 +113,6 @@ private:
 	int ci_numPointBCs;// node force;
 	int ci_numBlocks[3];//total number of  block in X direction
 	int ci_numFami;
-	int ci_numCrack;
-	double **cdp2_crack;
 
 	double cd_dt;
 	int ci_numTstep;
