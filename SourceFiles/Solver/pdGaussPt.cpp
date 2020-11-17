@@ -110,7 +110,7 @@ pdGaussPt::pdGaussPt(int numGP)
 
 pdGaussPt::~pdGaussPt()
 {
-	delete[] cdp_point, cdp_weight;
+	delete[] cdp_point, delete[] cdp_weight;
 	cdp_point = NULL, cdp_weight = NULL;
 }
 

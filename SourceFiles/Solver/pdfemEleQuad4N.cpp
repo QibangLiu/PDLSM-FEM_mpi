@@ -101,7 +101,7 @@ void pdfemEleQuad4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matri
 			matoperat.matMultiply(L, Vgp_sig[i], Nsigma[i]);
 		}
 		//===
-		delete  epsilon, sigma, B;
+		delete epsilon, delete sigma, delete B;
 		B = NULL; sigma = NULL;  epsilon = NULL;
 		for (int i = 0; i < 3; i++)
 		{
@@ -166,7 +166,7 @@ void pdfemEleQuad4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matri
 			}
 		}
 		
-		delete  epsilon, sigma, B;
+		delete epsilon, delete sigma, delete B;
 		B = NULL; sigma = NULL;  epsilon = NULL;
 		for (int i = 0; i < 3; i++)
 		{
@@ -175,7 +175,7 @@ void pdfemEleQuad4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matri
 			rhsFIT[i] = NULL;
 			coeFIT[i] = NULL;
 		}
-		delete[] rhsFIT, coeFIT;
+		delete[] rhsFIT, delete[] coeFIT;
 		rhsFIT = NULL; coeFIT = NULL;
 	}
 	else
@@ -428,7 +428,7 @@ void pdfemEleQuad4N::vec_mNtN_NBC(Vector* mNtN, double xN[][3], double p, double
 	normN->setCoeff(1, dXdq[0] * dXdp[2] - dXdp[0] * dXdq[2]);
 	normN->setCoeff(2, dXdp[0] * dXdq[1] - dXdq[0] * dXdp[1]);
 	matoperat.matMultiply(mNt, normN, mNtN);
-	delete mNt, normN;
+	delete mNt, delete normN;
 	mNt = NULL, normN = NULL;
 }
 
@@ -452,6 +452,6 @@ void pdfemEleQuad4N::shapFunMat_NtN(Matrix* NtN, double rho, double p, double q,
 	matoperat.matTranspose(NN, NNt);
 	matoperat.matMultiply(NNt, rho, NNt);
 	matoperat.matMultiply(NNt, NN, NtN);
-	delete NN, NNt;
+	delete NN, delete NNt;
 	NN = NULL; NNt = NULL;
 }

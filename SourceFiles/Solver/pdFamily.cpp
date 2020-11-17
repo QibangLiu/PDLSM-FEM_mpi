@@ -4,6 +4,7 @@ pdFamily::pdFamily()
 {
 	cd_delta = 0;
 	ci_famID = 0;
+	cb_allowFail = true;
 }
 
 pdFamily::~pdFamily()

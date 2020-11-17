@@ -84,20 +84,29 @@ public:
 	int ci_Numdimen;
 	int ci_eleType;//element Type;
 	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
-						//or pure FE node volume, or family setting;
+						//or pure FE node volume, or family setting, or FE mass
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
 	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function;
 
 	//==crack
 	int ci_numCrack;
 	double (*cdp_crack)[3][3];
+	//==solving setting;
+	double cd_dtf;
+	int ci_numTstep;
+	int ci_savefrequence;
 	//============================================
 	//==============FLAGs ========================
 	//===solver;
 	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	// PD node on the interface, interact with node in fem domain or not
 	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	int ci_failFlag;// 0--equivalent stress; 1--critical stretch;
 	//=============END flags=========================
+
+	//=========NO fail
+	int ci_numNOFAILnode;
+	int *cip_NOFailNode;
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;
@@ -114,9 +123,7 @@ private:
 	int ci_numBlocks[3];//total number of  block in X direction
 	int ci_numFami;
 
-	double cd_dt;
-	int ci_numTstep;
-	int ci_savefrequence;
+
 
 
 	pdMaterial *cop_material;//store material data

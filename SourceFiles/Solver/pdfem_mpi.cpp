@@ -31,21 +31,17 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	double t1, t2;
 	if (ci_rank==0)
 	{
-		cout << "PDLSM-FEM solving........." << endl;
+		const char* proName = o_modeldata.cs_title.c_str();
+		printf("PDLSM-FEM solving project of %s.........\n", proName);
 		t1= MPI_Wtime();
 	}
 	pdsolve o_sol(o_modeldata, ci_rank, ci_numProce);
-	o_sol.pdfemStaticSolver_CSRformat(o_modeldata);
+	o_sol.pdfemSolver(o_modeldata, o_files);
 	if (ci_rank==0)
 	{
 		double t2 = MPI_Wtime();
 		const char *proName = o_modeldata.cs_title.c_str();
 		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", proName, t2 - t1);
-		//===========post processing=====================
-		printf("writing results.......\n");
-		
-		o_files.writeResults(o_modeldata);
-
 		cout << "PDLSM-FEM program finished." << endl;
 	}
 }

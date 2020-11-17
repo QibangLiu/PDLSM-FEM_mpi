@@ -128,6 +128,11 @@ void pdNode::setLocalDamage(double phi)
 	cd_localDamage = phi;
 }
 
+double pdNode::getLocalDamage()
+{
+	return cd_localDamage;
+}
+
 void pdNode::setNodeType(int val)
 {
 	ci_nodeType = val;

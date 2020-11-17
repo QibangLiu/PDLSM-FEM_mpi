@@ -8,9 +8,12 @@ datModel::datModel()
 	//=====inital data=====
 	cop2_Block = NULL;
 	cop_datLev2 = new dataLev2();
+	ci_numCrack = 0;
+	ci_numFami = 0;
 	//=====initial flages;
 	ci_solvFlag = -1;
-	ci_PDBN_ITA_flag = 0;
+	ci_PDBN_ITA_flag = 1;
+	ci_failFlag = 1;
 }
 
 datModel::~datModel()
@@ -25,7 +28,8 @@ void datModel::readdata(ifstream & fin)
 	getline(fin, cs_label);
 	getline(fin, cs_label);
 	fin >> s_dimen>> ci_proType;
-	fin >> cd_dt >> ci_numTstep >> ci_savefrequence >>factor;
+	//fin >> cd_dtf >> ci_numTstep >> ci_savefrequence >>factor;
+	factor = 3;
 	cop_geomp = new pdGeomP( factor);
 	double e, nu, rho, KIc, sigult;
 	fin >> e >> nu >> rho >> KIc >> sigult; //read material parameters;
@@ -132,7 +136,7 @@ void datModel::readdata(ifstream & fin)
 		}
 	}
 	//=========== read Point BC===================
-	ci_numPointBCs = 0;
+	ci_numPointBCs = 0;//add future;
 	cop2_pointBC = new pdPointBC * [ci_numPointBCs];
 	double vForce;
 	int pBCid, fDof = -1;
@@ -178,7 +182,48 @@ void datModel::readdata(ifstream & fin)
 			cop2_NaturalBC[i]->initialEles(j, nbcConNID, 4,cop_datLev2);
 		}
 	}
+	//read no fail region
+	getline(fin, s_blank);
+	getline(fin, s_blank);
+	fin >> ci_numNOFAILnode;
+	cip_NOFailNode = new int[ci_numNOFAILnode];
+	for (int i = 0; i < ci_numNOFAILnode; i++)
+	{
+		fin >> cip_NOFailNode[i];
+	}
 	//// ===========read crack data;
+	getline(fin, s_blank);
+	getline(fin, s_blank);
+	fin >> ci_numCrack;
+	cdp_crack = new double[ci_numCrack][3][3];
+	if (ci_Numdimen==3)
+	{
+		for (int i = 0; i < ci_numCrack; i++)
+		{
+			for (int j = 0; j < 3; j++)//point 
+			{
+				for (int k = 0; k < 3; k++)// x, y,z
+				{
+					fin >> cdp_crack[i][j][k];
+				}
+				
+			}
+		}
+	}
+	else if (ci_Numdimen==2)
+	{
+		for (int i = 0; i < ci_numCrack; i++)
+		{
+			for (int j = 0; j < 2; j++)//point 
+			{
+				for (int k = 0; k < 2; k++)// x, y,z
+				{
+					fin >> cdp_crack[i][j][k];
+				}
+
+			}
+		}
+	}
 	//fin >> ci_numCrack;
 	//cdp2_crack = new double* [ci_numCrack];
 	//for (int i = 0; i < ci_numCrack; i++)
@@ -281,16 +326,16 @@ void datModel::allocaMemoryFami()
 {
 	/*allocate memory for famlilys*/
 	cop2_FamiOfNode = new pdFamily * [ci_numFami];
-	double fac = cop_geomp->getFactor();
-	int nd;
-	double delta_k;
+	//double fac = cop_geomp->getFactor();
+	//int nd;
+	//double delta_k;
 	for (int famk = 0; famk < ci_numFami; famk++)
 	{
 		cop2_FamiOfNode[famk] = new pdFamily();
 		cop2_FamiOfNode[famk]->setID(famk + 1);
-		nd = civ_pdNodeIDX[famk];
+		/*nd = civ_pdNodeIDX[famk];
 		delta_k = fac * pow((cop2_Node[nd]->getvolume()), 1.0 / ci_Numdimen);
-		cop2_FamiOfNode[famk]->sethorizon(delta_k);
+		cop2_FamiOfNode[famk]->sethorizon(delta_k);*/
 
 	}
 	if (cop2_FamiOfNode == NULL)
@@ -454,7 +499,12 @@ int datModel::getnumTstep() const
 
 double datModel::getTstep() const
 {
-	return cd_dt;
+	double E, delt_min, rho;
+	delt_min = cop_geomp->getminDelta();
+	E = cop_material->getE();
+	rho = cop_material->getrho();
+	double dt = cd_dtf * delt_min / sqrt(E / rho);
+	return dt;
 }
 
 int datModel::getSaveFreq() const

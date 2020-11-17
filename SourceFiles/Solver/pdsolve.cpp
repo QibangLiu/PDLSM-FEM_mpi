@@ -11,7 +11,7 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	cop_M = NULL;
 	cop_Ku = NULL; cop_F = NULL;
 	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_Ku = NULL, cdp_Ug = NULL, cdp_M = NULL;
-	
+	cdp_FGlo = NULL, cdp_KuGlo = NULL;
 
 	//===set data model ==================================
 	
@@ -92,12 +92,18 @@ void pdsolve::setDatModel(datModel& o_dat)
 	
 	// below is order dependent;
 	setFEID_PDEID(o_dat);
-	findDomainDimen(o_dat);
-	calVolumeOfNode(o_dat);
-	setPDNODEandnumFami(o_dat);
 	Setdof_Index(o_dat);
-	setDeltaMaxMin(o_dat);
-	setBlockAndFami(o_dat);
+	setPDNODEandnumFami(o_dat);
+	if (o_dat.getTotnumFami()!=0)// if not pure FEM
+	{
+		findDomainDimen(o_dat);
+		calVolumeOfNode(o_dat);
+		setDeltaMaxMin(o_dat);
+		setBlockAndFami(o_dat);
+		initialBondState(o_dat);
+		setNoFailRegion(o_dat);
+	}
+	
 	if (ci_rank == 0)
 	{
 		printf("Finished setting data model.\n");
@@ -246,7 +252,7 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 	endP = (ci_rank + 1) * totNumPDE / ci_numProce;
 	//======
 	int* conNID, numNodeELE, ele;
-	double(*xN)[3], VolEle;
+	double(*xN)[3], VolEle=0;
 	for (int pde = startP; pde < endP; pde++)
 	{
 		
@@ -260,17 +266,17 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
 		}
 		//Gauss integration to get element volumn
-		VolEle = VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+		VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
 		for (int i = 0; i < numNodeELE; i++)
 		{
 			//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
 			loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
 		}
-		delete[] conNID, xN;
+		delete[] conNID, delete[] xN;
 		conNID = NULL, xN = NULL;
 		
 	}
-	if (o_dat.ci_PDBN_ITA_flag)
+	if (o_dat.ci_PDBN_ITA_flag==1)
 	{
 		int totNumFE;
 		totNumFE = o_dat.civ_feIDX.size();
@@ -278,8 +284,6 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 		endP = (ci_rank + 1) * totNumFE / ci_numProce;
 		for (int fe = startP; fe < endP; fe++)
 		{
-			
-			
 			ele= o_dat.civ_feIDX[fe];
 			numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
 			conNID = new int[numNodeELE];
@@ -290,7 +294,7 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 				o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
 			}
 			//Gauss integration to get element volumn
-			VolEle = VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+			VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
 			for (int i = 0; i < numNodeELE; i++)
 			{
 				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 0)
@@ -300,7 +304,7 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 					loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
 				}
 			}
-			delete[] conNID, xN;
+			delete[] conNID, delete[] xN;
 			conNID = NULL, xN = NULL;
 			
 		}
@@ -313,9 +317,21 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 	}
 	
 	//==release memory;
-	delete[] loc_V, glo_V;
+	delete[] loc_V, delete[] glo_V;
 	loc_V = NULL; glo_V = NULL;
 	o_dat.civ_pdeIDX.clear();
+
+	//==set horizon of PD NODE;
+	double fac = o_dat.op_getGeomP()->getFactor();
+	int nd, numDime = o_dat.ci_Numdimen;
+	double delta_k;
+	int numFami = o_dat.getTotnumFami();
+	for (int famk = 0; famk < numFami; famk++)
+	{
+		nd = o_dat.civ_pdNodeIDX[famk];
+		delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDime);
+		o_dat.op_getFami(famk)->sethorizon(delta_k);
+	}
 }
 
 void pdsolve::setDeltaMaxMin(datModel& o_dat)
@@ -416,6 +432,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 			}
 			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
 				i_bIndex[2] * numBlocks[0] * numBlocks[1];
+
 			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
 		}
 	}
@@ -425,41 +442,45 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 		exit(0);
 	}
 	
-	//==allocate element into block;
+	//==allocate element into block; only for quasi-static solver;
 	int AlgoType, * conNID, numNele;
 	double eleCen[3], (*xN)[3], *N;
-	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+	if (o_dat.ci_solvFlag==2)
 	{
-		AlgoType = o_dat.op_getEles(ele)->getAlgoType();
-		if (AlgoType == 1)
+		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
 		{
-			//eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
-			numNele = o_dat.op_getEles(ele)->getNumNodes();
-			conNID = new int[numNele];
-			xN = new double[numNele][3];
-			N = new double[numNele];
-			o_dat.op_getEles(ele)->getConNid(conNID);
-			//o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
-			for (int n = 0; n < numNele; n++)
+			AlgoType = o_dat.op_getEles(ele)->getAlgoType();
+			if (AlgoType == 1)
 			{
-				o_dat.op_getNode(conNID[n] - 1)->getcoor(xN[n]);
-				/*for (int i = 0; i < 3; i++)
+				//eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
+				numNele = o_dat.op_getEles(ele)->getNumNodes();
+				conNID = new int[numNele];
+				xN = new double[numNele][3];
+				N = new double[numNele];
+				o_dat.op_getEles(ele)->getConNid(conNID);
+				//o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
+				for (int n = 0; n < numNele; n++)
 				{
-					eleCen[i] = eleCen[i] + xN[n][i] * N[n];
-				}*/
+					o_dat.op_getNode(conNID[n] - 1)->getcoor(xN[n]);
+					/*for (int i = 0; i < 3; i++)
+					{
+						eleCen[i] = eleCen[i] + xN[n][i] * N[n];
+					}*/
+				}
+				o_dat.op_getEles(ele)->eleCenter(eleCen, xN);
+				for (int i = 0; i < 3; i++)
+				{
+					i_bIndex[i] = (eleCen[i] - lbc[i]) / blockSize;
+				}
+				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+					i_bIndex[2] * numBlocks[0] * numBlocks[1];
+				o_dat.op_getBlock(blockIndex)->putEleInBlock(ele + 1);
+				delete[]conNID, delete[] xN, delete[] N;
+				conNID = NULL, xN = NULL, N = NULL;
 			}
-			o_dat.op_getEles(ele)->eleCenter(eleCen, xN);
-			for (int i = 0; i < 3; i++)
-			{
-				i_bIndex[i] = (eleCen[i] - lbc[i]) / blockSize;
-			}
-			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
-				i_bIndex[2] * numBlocks[0] * numBlocks[1];
-			o_dat.op_getBlock(blockIndex)->putEleInBlock(ele + 1);
-			delete[]conNID, xN, N;
-			conNID = NULL, xN = NULL, N = NULL;
 		}
 	}
+
 	//===============set families===============================
 	/*===parallize===*/
 	int totNumPDN, startP, endP, nd;
@@ -776,7 +797,7 @@ bool pdsolve::segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3
 		norm[0] = v1[1] * v2[2] - v1[2] * v2[1];
 		norm[1] = v1[2] * v2[0] - v1[0] * v2[2];
 		norm[2] = v1[0] * v2[1] - v1[1] * v2[0];
-		A1 = sqrt(norm[0] * norm[0] + norm[1] * norm[1] + norm[2] * norm[2]);
+		A0 = sqrt(norm[0] * norm[0] + norm[1] * norm[1] + norm[2] * norm[2]);
 		//A1
 		for (int i = 0; i < 3; i++)
 		{
@@ -797,7 +818,7 @@ bool pdsolve::segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3
 		norm[1] = v1[2] * v2[0] - v1[0] * v2[2];
 		norm[2] = v1[0] * v2[1] - v1[1] * v2[0];
 		A2 = sqrt(norm[0] * norm[0] + norm[1] * norm[1] + norm[2] * norm[2]);
-		if (abs(A0+A1+A2-A)>A*1.0e-18)
+		if (abs(A0+A1+A2-A)>A*1.0e-14)
 		{
 			return false;
 		}
@@ -861,6 +882,10 @@ pdsolve::pdsolve()
 
 void pdsolve::initialBondState(datModel& o_dat)
 {
+	if (o_dat.ci_numCrack==0)
+	{
+		return;
+	}
 	//==crack 
 	int numDime = o_dat.ci_Numdimen;
 	int numCrac;
@@ -933,11 +958,23 @@ void pdsolve::initialBondState(datModel& o_dat)
 	}
 }
 
+void pdsolve::setNoFailRegion(datModel& o_dat)
+{
+	int NID, famID;
+	for (int i = 0; i < o_dat.ci_numNOFAILnode; i++)
+	{
+		NID = o_dat.cip_NOFailNode[i];
+		famID = o_dat.op_getNode(NID - 1)->getFamID();
+		o_dat.op_getFami(famID - 1)->cb_allowFail = false;
+	}
+	delete[] o_dat.cip_NOFailNode;
+}
+
 double pdsolve::inflFunc( double xi[], pdFamily* p_fami, datModel&o_dat)
 {
 	double delt = p_fami->gethorizon();
-	double a = 1.0 /2.5;
-	double Aa = a * a * a;
+	double a = 1/1.0;
+	double Aa = a * a;
 	double omega = exp(-(xi[0] * xi[0] + xi[1] * xi[1]+ xi[2] * xi[2])
 		/ Aa / delt / delt);
 	return omega;
@@ -1211,7 +1248,7 @@ void pdsolve::matH2D(Matrix * H, pdFamily* p_fami, datModel & o_dat)
 
 	}
 
-	delete A, G;
+	delete A, delete G;
 	A = NULL; G = NULL;
 }
 
@@ -1240,7 +1277,7 @@ void pdsolve::matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat)
 			}
 		}
 	}
-	delete A, G;
+	delete A, delete G;
 	A = NULL; G = NULL;
 }
 
@@ -1447,20 +1484,29 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 						NID_m = temP_fami->getNodeID(m);
 						for (int j = 0; j < numDime; j++)
 						{
-							eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
 							temp = -(H->d_getCoeff(i, numDime * m + j) * dv_k);
-							if (eqindex_col != -1)
+							if (o_dat.ci_solvFlag)
 							{
-								i_temp = findCSRIndexOfMat(eqindex_row, eqindex_col);
-								cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+								// non-dynamic solver;
+								eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+								if (eqindex_col != -1)
+								{
+									i_temp = findCSRIndexOfMat(eqindex_row, eqindex_col);
+									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+								}
+								else
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+								}
 							}
 							else
 							{
+								// dynamic solver;
 								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
 								cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
 							}
 						}
-
 					}
 				}
 
@@ -1673,7 +1719,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				}
 
 			}
-			delete C, DC, NDC;
+			delete C, delete DC, delete NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 			//===========t2**** node 2========
 			famkk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
@@ -1743,7 +1789,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 				}
 
 			}
-			delete C, DC, NDC;
+			delete C, delete DC, delete NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 		}
 		delete N;
@@ -1832,13 +1878,13 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 						}
 						//===finish assembling for this ei-th node;
 						// delete;
-						delete C, finMat;
+						delete C, delete finMat;
 						C = NULL, finMat = NULL;
 					}
 				}
 			}
 		}
-		delete mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D;
+		delete mNt, delete Nmat, delete f_mNt, delete f_mNt_Nm, delete f_mNt_Nm_D;
 		mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
 	}
 }
@@ -1969,7 +2015,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				}
 
 			}
-			delete C, DC, NDC;
+			delete C, delete DC, delete NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 			//===========t2**** node 2========
 			famkk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
@@ -2059,7 +2105,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 				}
 
 			}
-			delete C, DC, NDC;
+			delete C, delete DC, delete NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 		}
 		delete N;
@@ -2185,13 +2231,13 @@ void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
 					}
 					//===finish assembling for this ei-th node;
 					// delete;
-					delete C, finMat;
+					delete C, delete finMat;
 					C = NULL, finMat = NULL;
 				}
 			}
 		}
 	}
-	delete mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D;
+	delete mNt, delete Nmat, delete f_mNt, delete f_mNt_Nm, delete f_mNt_Nm_D;
 	mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
 	
 }
@@ -2284,13 +2330,13 @@ void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
 			}
 			//===finish assembling for this ei-th node;
 			// delete;
-			delete C, finMat;
+			delete C, delete finMat;
 			C = NULL, finMat = NULL;
 		}
 	}
 	for (int i = 0; i < 3; i++)
 	{
-		delete mNt[i], mNtN[i];
+		delete mNt[i], delete mNtN[i];
 		mNt[i]=NULL, mNtN[i]=NULL;
 	}
 	delete  mNt_N_D;
@@ -2299,14 +2345,19 @@ void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
 
 void pdsolve::assembleMassMatPD_CSRformat(datModel& o_dat)
 {
+	int numFami, startP, endP;
+	numFami = o_dat.getTotnumFami();
+	startP = ci_rank * numFami / ci_numProce;
+	endP = (ci_rank + 1) * numFami / ci_numProce;
+
 	int numDime = o_dat.ci_Numdimen;
 	int Nid_k, eqIndex;
 	double rho, dv;
 	long long int i_temp;
 	rho = o_dat.op_getmaterial()->getrho();
-	for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
+	for (int famkk = startP; famkk < endP; famkk++)
 	{
-		Nid_k = o_dat.op_getFami(famk)->getNodeID(0);
+		Nid_k = o_dat.op_getFami(famkk)->getNodeID(0);
 		dv = o_dat.op_getNode(Nid_k - 1)->getvolume();
 		for (int i = 0; i < numDime; i++)
 		{
@@ -2507,7 +2558,7 @@ void pdsolve::assembleSEDbyFEM(datModel & o_dat)
 					}
 				}
 			}
-			delete[] conNid, xN;
+			delete[] conNid, delete[] xN;
 			conNid = NULL, xN = NULL;
 			delete Ke;
 			Ke = NULL;
@@ -2540,7 +2591,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 		ele = o_dat.civ_feIDX[fe];
 		//algoType = o_dat.op_getEles(ele)->getAlgoType();
 		//if (algoType == 2)
-		{
+		//{
 			numNode = o_dat.op_getEles(ele)->getNumNodes();
 			conNid = new int[numNode];
 			xN = new double[numNode][3];
@@ -2594,11 +2645,11 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 					}
 				}
 			}
-			delete[] conNid, xN;
+			delete[] conNid, delete[] xN;
 			conNid = NULL, xN = NULL;
 			delete Ke;
 			Ke = NULL;
-		}
+		//}
 
 	}
 }
@@ -2659,26 +2710,50 @@ void pdsolve::calExternalForce_CSRformat(datModel& o_dat)
 					}
 				}
 			}
-			delete[] xN, conNid;
+			delete[] xN, delete[] conNid;
 			xN = NULL, conNid = NULL;
 			delete Fe; Fe = NULL;
 		}
 	}
 }
 
+void pdsolve::pdfemSolver(datModel& o_dat, fioFiles& o_files)
+{
+	if (o_dat.ci_solvFlag==1)
+	{
+		//static solver
+		pdfemStaticSolver_CSRformat(o_dat, o_files);
+	}
+	else if (o_dat.ci_solvFlag==0)
+	{
+		//dynamic solver;
+		pdfemDynamicSolver_CSRformat(o_dat, o_files);
+	}
+	else
+	{
+		printf("ERROR: solver flag is wrong\n");
+		exit(0);
+	}
+}
+
 void pdsolve::assembleElemassMatFEM_CSRformat(datModel& o_dat)
 {
+	int totNumFE, startP, endP;
+	totNumFE = o_dat.civ_feIDX.size();
+	startP = ci_rank * totNumFE / ci_numProce;
+	endP = (ci_rank + 1) * totNumFE / ci_numProce;
+
 	int numNode, numDime = o_dat.ci_Numdimen;
 	Matrix* Me;
-	int algoType, * conNid, eqIndex_row, eqIndex_col;
+	int * conNid, eqIndex_row, eqIndex_col, ele;
 	double temp, (*xN)[3], rho;
 	rho = o_dat.op_getmaterial()->getrho();
 	long long int i_temp;
-	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+	for (int fe = startP; fe < endP; fe++)
 	{
-		algoType = o_dat.op_getEles(ele)->getAlgoType();
-		if (algoType == 2)
-		{
+		ele = o_dat.civ_feIDX[fe];
+		//if (algoType == 2)
+		//{
 			numNode = o_dat.op_getEles(ele)->getNumNodes();
 			conNid = new int[numNode];
 			xN = new double[numNode][3];
@@ -2713,9 +2788,9 @@ void pdsolve::assembleElemassMatFEM_CSRformat(datModel& o_dat)
 					}
 				}
 			}
-			delete[] xN, conNid; xN = NULL; conNid = NULL;
+			delete[] xN, delete[] conNid; xN = NULL; conNid = NULL;
 			delete Me; Me = NULL;
-		}
+		//}
 	}
 }
 
@@ -2764,7 +2839,7 @@ void pdsolve::assembleElemassMatFEM(datModel & o_dat, ofstream & test)
 					}
 				}
 			}
-			delete[] xN, conNid; xN = NULL; conNid = NULL;
+			delete[] xN, delete[] conNid; xN = NULL; conNid = NULL;
 			delete Me; Me = NULL;
 		}
 	}
@@ -2772,44 +2847,26 @@ void pdsolve::assembleElemassMatFEM(datModel & o_dat, ofstream & test)
 
 void pdsolve::setPrescribeVaryDis(datModel & o_dat)
 {
-	int Nid, direc;
-	double xc[2], dt, tempu;
+	// displacement increasing boundary condition, for dynamic or quasi-static solver;
+	double dt, Uval;
 	dt = o_dat.getTstep();
-	double v = 1.0e-9;
-	for (int k = 0; k < o_dat.getTotnumVaryEssenBC(); k++)
+	int numEBCs, numNODE, i_dof, Nid;
+	numEBCs = o_dat.getTotnumEssentialBCs();
+	for (int i = 0; i < numEBCs; i++)
 	{
-		Nid=o_dat.op_getVaryEssenBC(k)->getNid();
-		direc = o_dat.op_getVaryEssenBC(k)->getDirec();
-		o_dat.op_getNode(Nid - 1)->getcoor(xc);
-		tempu = o_dat.op_getNode(Nid - 1)->op_getDof(direc)->d_getValue();
-		// square plate (with hole)
-		if (xc[direc]<0)
+		if (o_dat.op_getEssenBC(i)->cb_varing)
 		{
-			tempu = tempu - v * dt;
+			Uval = o_dat.op_getEssenBC(i)->cd_value + dt * o_dat.op_getEssenBC(i)->cd_velocity;
+			o_dat.op_getEssenBC(i)->cd_value = Uval;
+			numNODE = o_dat.op_getEssenBC(i)->getNumNODE();
+			i_dof = o_dat.op_getEssenBC(i)->getDOF();
+			for (int j = 0; j < numNODE; j++)
+			{
+				Nid = o_dat.op_getEssenBC(i)->cip_NID[j];
+				o_dat.op_getNode(Nid-1)->op_getDof(i_dof)->setValue(Uval);
+			}
 		}
-		else
-		{
-			tempu = tempu + v * dt;
-		}
-	
-
-		/*// ASCB
-		tempu = tempu - v * dt;*/
-
-
-		o_dat.op_getNode(Nid - 1)->op_getDof(direc)->setValue(tempu);
 	}
-
-	// natural BC
-	/*double vp = 1e10;
-	double tempPressure;
-	for (int k = 0; k < o_dat.getTotnumNaturalBCs(); k++)
-	{
-		//ASCB
-		tempPressure = o_dat.op_getNaturalBC(k)->getTracTn();
-		tempPressure = tempPressure - vp * dt;
-		o_dat.op_getNaturalBC(k)->setTranTn(tempPressure);
-	}*/
 }
 
 
@@ -2879,7 +2936,7 @@ void pdsolve::calExternalForce( datModel & o_dat)
 					}
 				}
 			}
-			delete[] xN, conNid;
+			delete[] xN, delete[] conNid;
 			xN = NULL, conNid = NULL;
 			delete Fe; Fe = NULL;
 		}
@@ -2916,6 +2973,14 @@ void pdsolve::pdfemAssembleEquasSys_CSRformat(datModel& o_dat, int numEq)
 	assemblePDBEwork_CSRformat(o_dat);
 	assembleSEDbyFEM_CSRformat(o_dat);
 	calExternalForce_CSRformat(o_dat);
+	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	//MPI_Reduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	//MPI_Reduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	delete[] cdp_F, delete[] cdp_Ku;
+	cdp_F = NULL, cdp_Ku = NULL;
+	//MPI_Bcast(cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	//MPI_Bcast(cdp_FGlo, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 }
 
 void pdsolve::pdfemStaticSolver(datModel& o_dat)
@@ -2963,17 +3028,17 @@ void pdsolve::pdfemStaticSolver(datModel& o_dat)
 			}
 		}
 	}
-	delete uu_n, cop_Ku, cop_F;
+	delete uu_n, delete cop_Ku, delete cop_F;
 	uu_n=NULL, cop_Ku = NULL, cop_F = NULL;
 	//==stresses
 	calGlobalNodeStresses(o_dat);
 }
 
-void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat)
+void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 {
 	
 	//Don't need block data any more for static solver;
-	o_dat.deleteBLOCK();
+	//o_dat.deleteBLOCK();
 	//================
 	o_dat.ci_solvFlag = 1;// remove later;
 	if (o_dat.ci_solvFlag != 1)
@@ -3003,23 +3068,18 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat)
 	{
 		printf("Finished assembling Equations.\n");
 	}
-	MPI_Reduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE,MPI_SUM, 0, MPI_COMM_WORLD);
-	MPI_Reduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-	delete[] cdp_F, cdp_Ku;
-	cdp_F = NULL, cdp_Ku = NULL;
-	MPI_Bcast(cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	MPI_Bcast(cdp_FGlo, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	
 	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
 	Vector* Ug = new Vector(numEq);
 	if (ci_rank == 0)
 	{
-		printf("cluster_PARDISO solving.....\n");
+		printf("cluster_PARDISO static solving.....\n");
 	}
 	matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_KuGlo,
 				cdp_FGlo, Ug->cdp_vecCoeff, &comm);
 	if (ci_rank == 0)
 	{
-		printf("Finshed cluster_PARDISO solving.\n");
+		printf("Finshed cluster_PARDISO static solving.\n");
 	}
 	/*store results========;*/
 	MPI_Bcast(Ug->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -3042,11 +3102,16 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat)
 	//	storeDisplacementResult(o_dat, Ug);
 	//	delete Ug; Ug = NULL;
 	//}
-	delete[] cip_ia, cip_ja, cdp_FGlo, cdp_KuGlo;
+	delete[] cip_ia, delete[] cip_ja, delete[] cdp_FGlo, delete[] cdp_KuGlo;
 	cip_ia = NULL, cip_ja = NULL, cdp_FGlo = NULL, cdp_KuGlo = NULL;
 	/*==stresses==========*/
 	calGlobalNodeStresses(o_dat);
-	
+	if (ci_rank == 0)
+	{
+		//===========post processing=====================
+		printf("writing results.......\n");
+		o_files.writeResults(o_dat);
+	}
 }
 
 void pdsolve::storeDisplacementResult(datModel& o_dat, Vector* U)
@@ -3069,7 +3134,7 @@ void pdsolve::storeDisplacementResult(datModel& o_dat, Vector* U)
 
 void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 {
-	/*This function is set indexes for global stiffness matrix in CSR format;
+	/*This function is set indexes for global mass matrix in CSR format;
 	output is ia and ja;*/
 	
 	//allocate ia zero-based format;
@@ -3146,7 +3211,7 @@ void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 				eqInd_row = o_dat.op_getNode(nd)->op_getDof(i)->i_getEqInde();
 				if (eqInd_row != -1)
 				{
-					for (int itN = 0; itN < inteNode[nd].size(); itN++)
+					for (int itN = 0; itN < int(inteNode[nd].size()); itN++)
 					{
 						for (int j = 0; j < numDime; j++)
 						{
@@ -3173,7 +3238,7 @@ void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 				eqInd_row = o_dat.op_getNode(nd)->op_getDof(i)->i_getEqInde();
 				if (eqInd_row != -1)
 				{
-					vec_ja.push_back(eqInd_row);//zero-based;
+					vec_ja.push_back(eqInd_row);//zero-based; eqInd_row=eqInd_col
 					// cip_ia[0]=0, always for zero-based, so eqInd_row+1;
 					//count the num of non-zero coeff of each row
 					// will be revised later;
@@ -3204,31 +3269,64 @@ void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 	vec_ja.clear();
 	//===initializa cdp_M;
 	cdp_M = new double[size_ja];
+	cdp_MGlo = new double[size_ja];
 	for (long long int i = 0; i < size_ja; i++)
 	{
 		cdp_M[i] = 0;
+		cdp_MGlo[i] = 0;
 	}
 }
 
 void pdsolve::calResultantForce_CSRformat(datModel& o_dat, int numEq)
 {
+	if (!cdp_F)
+	{
+		cdp_F = new double[numEq];
+	}
+	if (!cdp_FGlo)
+	{
+		cdp_FGlo = new double[numEq];
+	}
 	for (int i = 0; i < numEq; i++)
 	{
 		cdp_F[i] = 0;
+		cdp_FGlo[i] = 0;
 	}
 	assembleInterWorkPD_CSRformat(o_dat);
 	assemblePDBEwork_CSRformat(o_dat);
 	assembleSEDbyFEM_CSRformat(o_dat);
 	calExternalForce_CSRformat(o_dat);
+	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 }
 
-void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat)
+void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 {
-	//===========static solver to set the start point of dynamic solver;
-	
+	//===========static solver to set the start ebc of dynamic solver;
+	//o_dat.ci_solvFlag = 1;
+	//pdfemStaticSolver_CSRformat(o_dat,o_files); // stress calculated;
+	//double maxSig = failureCriterion_stress(o_dat);
+	//double ratio = o_dat.op_getmaterial()->getSigult() / maxSig - 1.0e-10;;
+	//double Uval;
+	//int numEBCs, numNODE, i_dof, Nid;
+	//numEBCs = o_dat.getTotnumEssentialBCs();
+	//for (int i = 0; i < numEBCs; i++)
+	//{
+	//	if (o_dat.op_getEssenBC(i)->cb_varing)
+	//	{
+	//		Uval = o_dat.op_getEssenBC(i)->cd_value * ratio;
+	//		o_dat.op_getEssenBC(i)->cd_value = Uval;
+	//		numNODE = o_dat.op_getEssenBC(i)->getNumNODE();
+	//		i_dof = o_dat.op_getEssenBC(i)->getDOF();
+	//		for (int j = 0; j < numNODE; j++)
+	//		{
+	//			Nid = o_dat.op_getEssenBC(i)->cip_NID[j];
+	//			o_dat.op_getNode(Nid - 1)->op_getDof(i_dof)->setValue(Uval);
+	//		}
+	//	}
+	//}
 	//Don't need block data any more for dynamic solver;
 	o_dat.deleteBLOCK();
-	//================
+	//================================================================
 	o_dat.ci_solvFlag = 0;// remove later;
 	if (o_dat.ci_solvFlag != 0)
 	{
@@ -3248,12 +3346,14 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat)
 	totNumNode = o_dat.getTotnumNode();
 	numEq = totNumNode * numDime - numPreDof;
 	long long int numEq_long = numEq;
-	//=================================================
+	//========================================================================
 	//=============inital some variables=====
 	/*Vu_nm1--Vector: displacement of (n-1)th step;
 	 Vu_n--Vector: displacement of (n)th step;
 	 Vu_np1--Vector: displacement of (n+1)th step;
 	 Va_n--Vector: accerations of (n)th step;*/
+	int saveFren = o_dat.getSaveFreq();
+	int numTstep = o_dat.getnumTstep();
 	double* dp_A = new double[numEq];// accerations, Va_n point to this pointer;
 	Vector* Vu_nm1, * Vu_n, * Vu_np1, * Va_n;
 	Vu_nm1 = new Vector(numEq);
@@ -3263,34 +3363,68 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat)
 	Va_n->setNumRows(numEq);
 	Va_n->setCoeff(dp_A);
 
-	//==========mass matrix CSR format==
+	//==========mass matrix CSR format======
 	setCSRIndexes_gloMassMat(o_dat);
 	assembleElemassMatFEM_CSRformat(o_dat);
 	assembleMassMatPD_CSRformat(o_dat);
+	MPI_Allreduce(cdp_M, cdp_MGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	delete[]cdp_M;
+	cdp_M = NULL;
 	//===================
 	//===============start dynamic solving==========
-	cout << "==start to Dynamic solve.===" << endl;
+	if (ci_rank==0)
+	{
+		printf("start to Dynamic solving......\n");
+	}
 	double dt = o_dat.getTstep();
 	//============get 1th step displacement;
-	//initial Vu_n===
-
+	//initial Vu_n========
+	int eqIndex;
+	for (int k = 0; k < totNumNode; k++)
+	{
+		for (int i = 0; i < numDime; i++)
+		{
+			eqIndex = o_dat.op_getNode(k)->op_getDof(i)->i_getEqInde();
+			if (eqIndex != -1)
+			{
+				Vu_n->setCoeff(eqIndex, o_dat.op_getNode(k)->op_getDof(i)->d_getValue());
+			}
+		}
+	}
 	//==set varied prescribed displacemets;
-
+	setPrescribeVaryDis(o_dat);
 	//====resultant force;
 	calResultantForce_CSRformat(o_dat, numEq);
 	//===solve for acceleration
-	matoperat.PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_M, cdp_F, dp_A);
+	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
+	matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
+		cdp_FGlo, dp_A, &comm);
+	MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	//===updat displacement and store;
 	matoperat.matMultiply(Va_n, 0.5 * dt * dt, Vu_np1);
 	matoperat.matAdd(Vu_np1, Vu_n, Vu_np1);
 	storeDisplacementResult(o_dat, Vu_np1);
-	//===updat bond-state==
-
+	if (o_dat.ci_failFlag==0)
+	{
+		//calculate stress==
+		calGlobalNodeStresses(o_dat);
+		//===updat bond-state==
+		failureCriterion_stress(o_dat);
+	}
+	else if (o_dat.ci_failFlag == 1)
+	{
+		failureCriterion_stretch(o_dat);
+	}
+	
+	
 	//===
 	//===start loop=============;
-	for (int n = 1; n < 50; n++)
+	for (int n = 1; n < numTstep+1; n++)
 	{
-		cout << "time step n= " << n << endl;
+		if (ci_rank==0)
+		{
+			cout << "time step n= " << n << endl;
+		}
 		//initial Vu_n, Vu_nm1;
 		for (int i = 0; i < numEq; i++)
 		{
@@ -3299,28 +3433,48 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat)
 		}
 
 		//==set varied prescribed displacemets;
-
+		setPrescribeVaryDis(o_dat);
 		//====resultant force;
-		calResultantForce_CSRformat(o_dat, numEq);
+		calResultantForce_CSRformat(o_dat, numEq);//memory leak;
 		//===solve for acceleration
-		matoperat.PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_M, cdp_F, dp_A);
-		//===updat displacement and store the results;
+		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
+			cdp_FGlo, dp_A, &comm);
+		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+		////===updat displacement and store the results;
 		matoperat.matMultiply(Va_n, dt * dt, Vu_np1); // a*t^2;
 		matoperat.matAdd(Vu_np1,2.0, Vu_n, Vu_np1);// 2*U_n+a*t^2;
 		matoperat.matMinus(Vu_np1, Vu_nm1, Vu_np1);//2*U_n+a*t^2-U_(n-1);
 		storeDisplacementResult(o_dat, Vu_np1);
-		//===updat bond-state==
-
-		//==calculta reaction force if needed;
+		if (o_dat.ci_failFlag == 0)
+		{
+			//calculate stress==
+			calGlobalNodeStresses(o_dat);
+			//===updat bond-state==
+			failureCriterion_stress(o_dat);
+		}
+		else if (o_dat.ci_failFlag == 1)
+		{
+			failureCriterion_stretch(o_dat);
+		}
+		////==calculta reaction force if needed;
 
 		//write results===
+		if (n%saveFren==0||n== numTstep)
+		{
+			calLocalDamage(o_dat);
+			if (ci_rank == 0)
+			{
+				printf("Writing results at step of %d ......\n", n);
+				o_files.writeReslutsTOTAL_vtk(o_dat, n); //**set phi
+			}
+		}
 	}
 
 	// release memory;
-	delete Vu_nm1, Vu_n, Vu_np1, Va_n; // no need to delete dp_A, if Va_n is deleted;
+	delete Vu_nm1, delete Vu_n, delete Vu_np1, delete Va_n; // no need to delete dp_A, if Va_n is deleted;
 	Vu_nm1 = NULL, Vu_n = NULL, Vu_np1 = NULL, Va_n = NULL;
-	delete[] cip_ia, cip_ja, cdp_F, cdp_M;
-	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_M = NULL;
+	delete[] cip_ia, delete[] cip_ja, delete[] cdp_F, delete[] cdp_FGlo, delete[] cdp_MGlo;
+	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_FGlo = NULL, cdp_MGlo = NULL;
 }
 
 double pdsolve::failureCriterion_stretch(datModel& o_dat)
@@ -3336,7 +3490,7 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat)
 	int numNodeOfFami, NID_k, NID_m;
 	double xk[3] = { 0 }, xm[3] = { 0 }, uk[3] = { 0 }, um[3] = { 0 }, xi[3] = { 0 }, eta[3] = { 0 };
 	double mag_ref,mag, s,s_max=0, sc;//get latter
-	double  KIC, G0,kappa,E,nu, delta_k, delta_m, delta;
+	double  KIC, G0, kappa, E, nu, delta_k, delta_m, delta, mu_km;
 	double fac = o_dat.op_getGeomP()->getFactor();
 	E = o_dat.op_getmaterial()->getE();
 	nu = o_dat.op_getmaterial()->getnu();
@@ -3346,49 +3500,58 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat)
 	for (int famkk = startP; famkk < endP; famkk++)
 	{
 		temP_fami = o_dat.op_getFami(famkk);
-		numNodeOfFami = temP_fami->getNumNode();
-		NID_k = temP_fami->getNodeID(0);
-		o_dat.op_getNode(NID_k - 1)->getcoor(xk);
-		delta_k = temP_fami->gethorizon();
-		for (int i = 0; i < numDime; i++)
+		if (temP_fami->cb_allowFail)
 		{
-			uk[i]=o_dat.op_getNode(NID_k - 1)->op_getDof(i)->d_getValue();
-		}
-		for (int m = 1; m < NID_m; m++)
-		{
-			NID_m = temP_fami->getNodeID(m);
-			o_dat.op_getNode(NID_m - 1)->getcoor(xm);
+			numNodeOfFami = temP_fami->getNumNode();
+			NID_k = temP_fami->getNodeID(0);
+			o_dat.op_getNode(NID_k - 1)->getcoor(xk);
+			delta_k = temP_fami->gethorizon();
 			for (int i = 0; i < numDime; i++)
 			{
-				um[i] = o_dat.op_getNode(NID_m - 1)->op_getDof(i)->d_getValue();
-				xi[i] = xm[i] - xk[i];
-				eta[i] = um[i] - uk[i];
+				uk[i] = o_dat.op_getNode(NID_k - 1)->op_getDof(i)->d_getValue();
 			}
-			mag_ref = sqrt(xi[0] * xi[0] + xi[1] * xi[1] + xi[2] * xi[2]);
-			mag = sqrt((xi[0] + eta[0]) * (xi[0] + eta[0]) + (xi[1] + eta[1]) * (xi[1] + eta[1]) +
-				(xi[2] + eta[2]) * (xi[2] + eta[2]));
-			s = mag / mag_ref - 1.0;
-			
-			if (o_dat.ci_solvFlag==0)
+			for (int m = 1; m < numNodeOfFami; m++)
 			{
-				delta_m = fac * pow((o_dat.op_getNode(NID_m-1)->getvolume()), 1.0 / numDime);
-				delta = 0.5 * (delta_k + delta_m);
-				sc = sqrt(5 * G0 / (9 * kappa * delta));
-				if (s >= sc)
+				mu_km = temP_fami->getbondstate(m);
+				if (mu_km == 1)
 				{
-					temP_fami->setbondstate(m, 0);//only dynamic solver set mu=0;
-					mp_fami[famkk] = 1;
+					NID_m = temP_fami->getNodeID(m);
+					o_dat.op_getNode(NID_m - 1)->getcoor(xm);
+					for (int i = 0; i < numDime; i++)
+					{
+						um[i] = o_dat.op_getNode(NID_m - 1)->op_getDof(i)->d_getValue();
+						xi[i] = xm[i] - xk[i];
+						eta[i] = um[i] - uk[i];
+					}
+					mag_ref = sqrt(xi[0] * xi[0] + xi[1] * xi[1] + xi[2] * xi[2]);
+					mag = sqrt((xi[0] + eta[0]) * (xi[0] + eta[0]) + (xi[1] + eta[1]) * (xi[1] + eta[1]) +
+						(xi[2] + eta[2]) * (xi[2] + eta[2]));
+					s = mag / mag_ref - 1.0;
+
+					if (o_dat.ci_solvFlag == 0)
+					{
+						delta_m = fac * pow((o_dat.op_getNode(NID_m - 1)->getvolume()), 1.0 / numDime);
+						delta = 0.5 * (delta_k + delta_m);
+						sc = sqrt(5 * G0 / (9 * kappa * delta));
+						if (s >= sc)
+						{
+							temP_fami->setbondstate(m, 0);//only dynamic solver set mu=0;
+							mp_fami[famkk] = 1;
+						}
+
+					}
+					else if (o_dat.ci_solvFlag == 1)
+					{
+						if (s > s_max)
+						{
+							s_max = s;
+						}
+					}
 				}
-				
-			}
-			else if (o_dat.ci_solvFlag==1)
-			{
-				if (s>s_max)
-				{
-					s_max = s;
-				}
+
 			}
 		}
+		
 	}
 	//==== sent and receive data;
 	double maxS = 0;
@@ -3429,50 +3592,66 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 	vector<int>mp_fami(numFami);
 	vector<int>mp_fami_glo(numFami);
 	int numNodeOfFami, NID_k, NID_m;
-	double sigma_k[6], sigma_m[6], sigma1, sigult, sigma1_max=0;
+	double sig[6], sigma_k[6], sigma_m[6], sigma1, sigult, sigma1_max = 0, mu_km;
 	sigult = o_dat.op_getmaterial()->getSigult();
-	Matrix* sigma_kg = new Matrix(3, 3);
-	Matrix* simga_priaxis = new Matrix(3, 3);// dummy here.
-	Vector* sigma_pri = new Vector(3);
+	//Matrix* sigma_kg = new Matrix(3, 3);
+	//Matrix* simga_priaxis = new Matrix(3, 3);// dummy here.
+	//Vector* sigma_pri = new Vector(3);
 	for (int famkk = startP; famkk < endP; famkk++)
 	{
 		temP_fami = o_dat.op_getFami(famkk);
-		numNodeOfFami = temP_fami->getNumNode();
-		NID_k = temP_fami->getNodeID(0);
-		o_dat.op_getNode(NID_k - 1)->getStress(sigma_k);
-		for (int m = 1; m < NID_m; m++)
+		if (temP_fami->cb_allowFail)
 		{
-			NID_m = temP_fami->getNodeID(m);
-			o_dat.op_getNode(NID_m - 1)->getStress(sigma_m);
-			// symmetry matrix, store by upper triangle
-			for (int ii = 0; ii < 3; ii++)
+			numNodeOfFami = temP_fami->getNumNode();
+			NID_k = temP_fami->getNodeID(0);
+			o_dat.op_getNode(NID_k - 1)->getStress(sigma_k);
+			for (int m = 1; m < numNodeOfFami; m++)
 			{
-				sigma_kg->setCoeff(ii, ii, 0.5 * (sigma_k[ii] + sigma_m[ii]));
-			}
-			sigma_kg->setCoeff(0, 1, 0.5 * (sigma_k[3] + sigma_m[3]));
-			sigma_kg->setCoeff(0, 2, 0.5 * (sigma_k[5] + sigma_m[5]));
-			sigma_kg->setCoeff(1, 2, 0.5 * (sigma_k[4] + sigma_m[4]));
-			matoperat.dSymeEigenV('N', sigma_kg, sigma_pri, simga_priaxis);
-			sigma1 = *max_element(sigma_pri->cdp_vecCoeff, sigma_pri->cdp_vecCoeff + 3);
-			if (o_dat.ci_solvFlag == 0)
-			{
-				if (sigma1>sigult)
+				mu_km = temP_fami->getbondstate(m);
+				if (mu_km == 1)
 				{
-					temP_fami->setbondstate(m, 0);//only dynamic solver set mu=0;
-					mp_fami[famkk] = 1;
+					NID_m = temP_fami->getNodeID(m);
+					o_dat.op_getNode(NID_m - 1)->getStress(sigma_m);
+					// symmetry matrix, store by upper triangle
+				/*	for (int ii = 0; ii < 3; ii++)
+					{
+						sigma_kg->setCoeff(ii, ii, 0.5 * (sigma_k[ii] + sigma_m[ii]));
+					}
+					sigma_kg->setCoeff(0, 1, 0.5 * (sigma_k[3] + sigma_m[3]));
+					sigma_kg->setCoeff(0, 2, 0.5 * (sigma_k[5] + sigma_m[5]));
+					sigma_kg->setCoeff(1, 2, 0.5 * (sigma_k[4] + sigma_m[4]));
+					matoperat.dSymeEigenV('N', sigma_kg, sigma_pri, simga_priaxis);
+					sigma1 = *max_element(sigma_pri->cdp_vecCoeff, sigma_pri->cdp_vecCoeff + 3);*/
+					for (int ii = 0; ii < 6; ii++)
+					{
+						sig[ii] = 0.5 * (sigma_k[ii] + sigma_m[ii]);
+					}
+					sigma1 = sqrt(0.5 * ((sig[0] - sig[1]) * (sig[0] - sig[1]) +
+						(sig[0] - sig[2]) * (sig[0] - sig[2]) + (sig[1] - sig[2]) * (sig[1] - sig[2])) +
+						3 * (sig[3] * sig[3] + sig[4] * sig[4] + sig[5] * sig[5]));
+					if (o_dat.ci_solvFlag == 0)
+					{
+						if (sigma1 > sigult)
+						{
+							temP_fami->setbondstate(m, 0);//only dynamic solver set mu=0;
+							mp_fami[famkk] = 1;
+						}
+					}
+					else if (o_dat.ci_solvFlag == 1)
+					{
+						if (sigma1 > sigma1_max)
+						{
+							sigma1_max = sigma1;
+						}
+					}
 				}
-			}
-			else if (o_dat.ci_solvFlag == 1)
-			{
-				if (sigma1 > sigma1_max)
-				{
-					sigma1_max = sigma1;
-				}
+
 			}
 		}
+		
 	}
 
-	//==== sent and receive data;
+	////==== sent and receive data;
 	double maxSig = 0;
 	if (o_dat.ci_solvFlag==0)
 	{
@@ -3497,7 +3676,43 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 	{
 		MPI_Allreduce(&sigma1_max, &maxSig, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 	}
+	/*delete sigma_kg, delete simga_priaxis, delete sigma_pri;
+	sigma_kg = NULL, simga_priaxis = NULL, sigma_pri = NULL;*/
 	return maxSig;
+}
+
+void pdsolve::calLocalDamage(datModel& o_dat)
+{
+	int numFami, startP, endP;
+	numFami = o_dat.getTotnumFami();
+	startP = ci_rank * numFami / ci_numProce;
+	endP = (ci_rank + 1) * numFami / ci_numProce;
+	pdFamily* temP_fami;
+	int numNodeOfFami;
+	double tempDam;
+	vector<double>locaDama(numFami);
+	vector<double>glo_locaDama(numFami);
+	for (int famkk = startP; famkk < endP; famkk++)
+	{
+		tempDam = 0;
+		temP_fami = o_dat.op_getFami(famkk);
+		numNodeOfFami = temP_fami->getNumNode();
+		for (int m = 1; m < numNodeOfFami; m++)
+		{
+			tempDam = tempDam + temP_fami->getbondstate(m);
+		}
+		locaDama[famkk] = 1.0 - tempDam / numNodeOfFami;
+	}
+	MPI_Reduce(&(locaDama[0]), &(glo_locaDama[0]), numFami, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	if (ci_rank==0)
+	{
+		int NID_k;
+		for (int famk = 0; famk < numFami; famk++)
+		{
+			NID_k = o_dat.op_getFami(famk)->getNodeID(0);
+			o_dat.op_getNode(NID_k - 1)->setLocalDamage(glo_locaDama[famk]);
+		}
+	}
 }
 
 void pdsolve::calBondstate(double x1[], double x2[], datModel & o_dat)
@@ -3595,10 +3810,10 @@ void pdsolve::calPDNodeStresses(datModel & o_dat, int* count)
 				o_dat.op_getNode(Nid_k - 1)->setStress(ii, sigma->d_getCoeff(ii));
 			}
 			o_dat.op_getNode(Nid_k - 1)->setStress(3, sigma->d_getCoeff(2));
-			delete C, uk;
+			delete C, delete uk;
 			C = NULL; uk = NULL;
 		}
-		delete sigma, epsilon;
+		delete sigma, delete epsilon;
 		sigma = NULL; epsilon = NULL;
 	}
 	else if (numDime==3)
@@ -3633,10 +3848,10 @@ void pdsolve::calPDNodeStresses(datModel & o_dat, int* count)
 			{
 				o_dat.op_getNode(Nid_k - 1)->setStress(ii, sigma->d_getCoeff(ii));
 			}
-			delete C, uk;
+			delete C, delete uk;
 			C = NULL; uk = NULL;
 		}
-		delete sigma, epsilon;
+		delete sigma, delete epsilon;
 		sigma = NULL; epsilon = NULL;
 	}
 }
@@ -3712,7 +3927,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 						o_dat.op_getNode(conNID[nd] - 1)->addStress(si, Nsig[si]->d_getCoeff(nd));
 					}
 				}
-				delete[] xN, conNID;
+				delete[] xN, delete[] conNID;
 				xN = NULL, conNID = NULL;
 				delete Ue;
 				Ue = NULL;
@@ -3793,7 +4008,7 @@ void pdsolve::calFEMNodeStresses_EXP(datModel& o_dat, int* count)
 					}
 					o_dat.op_getNode(conNID[nd] - 1)->addStress(3, Nsig[2]->d_getCoeff(nd));
 				}
-				delete[] xN, conNID;
+				delete[] xN, delete[] conNID;
 				xN = NULL, conNID = NULL;
 				delete Ue;
 				Ue = NULL;
@@ -3862,7 +4077,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 			ele = o_dat.civ_feIDX[fe];
 			/*algoType = o_dat.op_getEles(k)->getAlgoType();
 			if (algoType == 2)*/
-			{
+			/*{*/
 				numNodeEle = o_dat.op_getEles(ele)->getNumNodes();
 				Ue = new Vector(numDime * numNodeEle);
 				xN = new double[numNodeEle][3];
@@ -3889,7 +4104,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 					o_dat.op_getNode(conNID[nd] - 1)->addStress(1, Nsig[1]->d_getCoeff(nd));
 					o_dat.op_getNode(conNID[nd] - 1)->addStress(3, Nsig[2]->d_getCoeff(nd));//sig_xy, caution
 				}
-				delete[] xN, conNID;
+				delete[] xN, delete[] conNID;
 				xN = NULL, conNID = NULL;
 				delete Ue;
 				Ue = NULL;
@@ -3898,7 +4113,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 					delete Nsig[ii];
 					Nsig[ii] = NULL;
 				}
-			}
+			//}
 		}
 		delete fitA;
 		fitA = NULL;
@@ -3955,7 +4170,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 		fitA->setCoeff(3, 1, temp);
 		temp = fitA->d_getCoeff(2, 3);
 		fitA->setCoeff(3, 2, temp);
-		delete[] pp, qq, rr;
+		delete[] pp, delete[] qq, delete[] rr;
 		pp = NULL; qq = NULL; rr = NULL;
 		//===get stresses of each fem elements
 		int algoType, numNodeEle, * conNID, ele;
@@ -3994,7 +4209,7 @@ void pdsolve::calFEMNodeStresses_LSM(datModel& o_dat, int* count)
 						o_dat.op_getNode(conNID[nd] - 1)->addStress(si, Nsig[si]->d_getCoeff(nd));
 					}
 				}
-				delete[] xN, conNID;
+				delete[] xN, delete[] conNID;
 				xN = NULL, conNID = NULL;
 				delete Ue;
 				Ue = NULL;
@@ -4052,20 +4267,22 @@ void pdsolve::calGlobalNodeStresses(datModel & o_dat)
 	//calFEMNodeStresses_LSM(o_dat, count);
 
 	//=============
-	MPI_Reduce(count, gloCount, totNumNODE, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-	MPI_Reduce(o_dat.cop_datLev2->cdp_sigma, glosig, 6 * totNumNODE, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Allreduce(count, gloCount, totNumNODE, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(o_dat.cop_datLev2->cdp_sigma, glosig, 6 * totNumNODE, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	//MPI_Reduce(count, gloCount, totNumNODE, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	//MPI_Reduce(o_dat.cop_datLev2->cdp_sigma, glosig, 6 * totNumNODE, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 	double* tempSig = o_dat.cop_datLev2->cdp_sigma;
 	o_dat.cop_datLev2->cdp_sigma = glosig;
 	delete[] tempSig; tempSig = NULL; /*Caution here;*/
 	/*====get average stress=============;*/
-	if (ci_rank==0)
+	//if (ci_rank==0)
 	{
 		for (int i = 0; i < totNumNODE; i++)
 		{
-			o_dat.op_getNode(i)->calAverageStress(gloCount[i]);
+			o_dat.op_getNode(i)->calAverageStress(gloCount[i]);//parallel later;
 		}
 	}
-	delete[] count, gloCount; 
+	delete[] count, delete[] gloCount;
 	count = NULL, gloCount = NULL;
 }
 

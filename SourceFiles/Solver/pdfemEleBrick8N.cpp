@@ -74,7 +74,7 @@ void pdfemEleBrick8N::shapFunMat_NtN(Matrix* NtN, double p, double q, double r)
 	matoperat.matTranspose(NN, NNt);
 	//matoperat.matMultiply(NNt, rho, NNt);
 	matoperat.matMultiply(NNt, NN, NtN);
-	delete NN, NNt;
+	delete NN, delete NNt;
 	NN = NULL; NNt = NULL;
 }
 
@@ -99,6 +99,8 @@ double pdfemEleBrick8N::detJacobi(double xN[][3], double p, double q, double r)
 		}
 		det_J = det_J + ans1 - ans2;
 	}
+	delete J;
+	J = NULL;
 	return (det_J); 
 }
 
@@ -142,7 +144,7 @@ void pdfemEleBrick8N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matr
 		}
 
 		//===
-		delete  epsilon, sigma, B;
+		delete epsilon, delete sigma, delete B;
 		B = NULL; sigma = NULL;  epsilon = NULL;
 		for (int i = 0; i < 6; i++)
 		{
@@ -217,7 +219,7 @@ void pdfemEleBrick8N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matr
 				Nsigma[ii]->setCoeff(ni, tempsigma);
 			}
 		}
-		delete  epsilon, sigma, B;
+		delete epsilon, delete sigma, delete B;
 		B = NULL; sigma = NULL;  epsilon = NULL;
 		for (int i = 0; i < 6; i++)
 		{
@@ -226,7 +228,7 @@ void pdfemEleBrick8N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matr
 			rhsFIT[i] = NULL;
 			coeFIT[i] = NULL;
 		}
-		delete[] rhsFIT, coeFIT;
+		delete[] rhsFIT, delete[] coeFIT;
 		rhsFIT = NULL; coeFIT = NULL;
 	}
 	else
@@ -385,7 +387,7 @@ void pdfemEleBrick8N::BmatFEM(Matrix* B, double xN[][3], double p, double q, dou
 	delete J; J = NULL;
 	for (int i = 0; i < 8; i++)
 	{
-		delete dNdX[i], dNdpqr[i];
+		delete dNdX[i], delete dNdpqr[i];
 		dNdX[i]=NULL, dNdpqr[i]=NULL;
 	}
 }

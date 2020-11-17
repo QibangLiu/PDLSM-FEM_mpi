@@ -24,7 +24,7 @@ pdfemNaturalBCs::~pdfemNaturalBCs()
 		delete cop2_NBCsEle[i];
 		cop2_NBCsEle[i] = nullptr;
 	}
-	delete cop2_NBCsEle;
+	delete[] cop2_NBCsEle;
 	cop2_NBCsEle = nullptr;
 }
 

@@ -35,7 +35,7 @@ void pdfemEleTetra4N::eleStiffMatFEM(Matrix* Ke, Matrix* D, double xN[][3])
 	matoperat.matMultiply(Bt, D, BtD);
 	matoperat.matMultiply(BtD, B, Ke);
 	matoperat.matMultiply(Ke, V, Ke);
-	delete B, Bt, BtD;
+	delete B, delete Bt, delete BtD;
 	B = NULL, Bt = NULL, BtD = NULL;
 
 }
@@ -194,8 +194,8 @@ void pdfemEleTetra4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matr
 		}
 	}
 	
-	delete epsilon, sigma;
-	epsilon = NULL; sigma = NULL;
+	delete epsilon, delete sigma, delete B;
+	epsilon = NULL; sigma = NULL, B = NULL;
 
 }
 

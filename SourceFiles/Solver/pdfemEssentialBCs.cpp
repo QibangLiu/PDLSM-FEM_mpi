@@ -2,6 +2,8 @@
 
 pdfemEssentialBCs::pdfemEssentialBCs(int numNode, string dof, double val)
 {
+	cb_varing = false;
+	cd_velocity = 0;
 	ci_numNODE = numNode;
 	cd_value = val;
 	cip_NID = new int[ci_numNODE];

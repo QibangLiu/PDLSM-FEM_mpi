@@ -21,11 +21,12 @@ public:
 	void setBlockSize(double val);	
 	void setMaxDelta(double del);
 	void setMinDelta(double del);
+	//===
+	double cd_factor;//horizon size factor
 private:
 	pdGeomP();
 	double cd_rtc[3];//right top cornor coordinate;
 	double cd_lbc[3];//left bottom cornor coordinate
-	double cd_factor;//horizon size factor
 	double cd_maxDelta, cd_minDelta;//the max,min delta of PD node;
 	double cd_blockSize;
 };

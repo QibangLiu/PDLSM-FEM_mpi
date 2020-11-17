@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
 {
 	omp_set_num_threads(4);
 	MPI_Init(&argc, &argv);// message passing interface
-	pdfem_mpi* po_pdfem = new pdfem_mpi(argc, argv);
+	pdfem_mpi po_pdfem(argc, argv);
 	MPI_Finalize();
 	return 0;
 }

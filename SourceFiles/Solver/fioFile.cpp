@@ -60,15 +60,15 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 				{
 					if (tokens[1]=="DYNAMIC")
 					{
-						o_dat.ci_solvFlag == 0;
+						o_dat.ci_solvFlag = 0;
 					}
 					else if (tokens[1] == "STATIC")
 					{
-						o_dat.ci_solvFlag == 1;
+						o_dat.ci_solvFlag = 1;
 					}
 					else if (tokens[1] == "QUASI-STATIC")
 					{
-						o_dat.ci_solvFlag == 2;
+						o_dat.ci_solvFlag = 2;
 					}
 					else
 					{
@@ -80,12 +80,49 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 					}
 				}
 			}
+			else if (tokens[0] == "SETSOLVING") //setsolver cmd
+			{
+				if (tokens.size() < 5)
+				{
+					if (ci_rank == 0)
+					{
+						printf("Miss SETSOLVING CMD. \n");
+						exit(0);
+					}
+				}
+				else
+				{
+					o_dat.cd_dtf = atof(tokens[1].c_str());
+					o_dat.ci_numTstep= atoi(tokens[2].c_str());
+					o_dat.ci_savefrequence= atoi(tokens[3].c_str());
+					o_dat.op_getGeomP()->cd_factor= atof(tokens[4].c_str());
+				}
+			}
+			else if (tokens[0] == "VEBC")
+			{
+				if (tokens.size() < 3)
+				{
+					if (ci_rank == 0)
+					{
+						printf("Miss VEBC CMD. \n");
+						exit(0);
+					}
+				}
+				else
+				{
+					int ID;
+					double velo;
+					ID= atoi(tokens[1].c_str());
+					velo= atof(tokens[2].c_str());
+					o_dat.op_getEssenBC(ID)->cb_varing = true;
+					o_dat.op_getEssenBC(ID)->cd_velocity = velo;
+				}
+			}
 			else
 			{
 				if (ci_rank == 0)
 				{
-					printf("Don't exist command of %s.\n", tokens[0]);
-					exit(0);
+					printf("WARNING: ignore unknown command of %s. \n", tokens[0].c_str());
 				}
 			}
 			
@@ -122,7 +159,7 @@ void fioFiles::writeResults(datModel &o_dat)
 	}
 	if (ci_wflag==1)
 	{
-		writeReslutsTOTAL_vtk(o_dat);
+		writeReslutsTOTAL_vtk(o_dat,0);
 	}
 	else if (ci_wflag ==2)
 	{
@@ -131,7 +168,7 @@ void fioFiles::writeResults(datModel &o_dat)
 	}
 	else if (ci_wflag ==3)
 	{
-		writeReslutsTOTAL_vtk(o_dat);
+		writeReslutsTOTAL_vtk(o_dat,0);
 		writeResultsPD_vtk(o_dat);
 		writeResultsFEM_vtk(o_dat);
 		writeUofNode(o_dat);
@@ -140,6 +177,7 @@ void fioFiles::writeResults(datModel &o_dat)
 	
 
 }
+
 
 void fioFiles::writeUofNode(datModel &o_dat)
 {
@@ -193,11 +231,11 @@ void fioFiles::writeSigofNode(datModel &o_dat)
 	fout.close();
 }
 
-void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat)
+void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat,int nTstep)
 {
 	char fileNAME[_MAX_PATH];
 	getTitle(o_dat, fileNAME);
-	sprintf(fileNAME, "%s.vtk", fileNAME);
+	sprintf(fileNAME, "%s_%d.vtk", fileNAME, nTstep);
 	ofstream fout(fileNAME);
 	//=============header, title, data type( ASCII or BINARY)============
 	fout << setiosflags(ios::scientific) << setprecision(4);
@@ -253,6 +291,17 @@ void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat)
 	{
 		o_dat.op_getNode(i)->printStressTensor_vtk(fout);
 		fout << endl;
+	}
+	//phi
+	fout << "SCALARS " << "phi " << "float " << 1 << endl;
+	fout << "LOOKUP_TABLE  " << "default  "<< endl;
+	for (int i = 0; i < o_dat.getTotnumNode(); i++)
+	{
+		fout << o_dat.op_getNode(i)->getLocalDamage() << ' ';
+		if (i%20==0)
+		{
+			fout << endl;
+		}
 	}
 	fout.close();
 }
@@ -359,6 +408,8 @@ void fioFiles::writeResultsPD_vtk(datModel& o_dat)
 		}
 	}
 	fout.close();
+	delete[] mapNodeID;
+	mapNodeID = NULL;
 }
 
 void fioFiles::writeResultsFEM_vtk(datModel& o_dat)
@@ -469,4 +520,6 @@ void fioFiles::writeResultsFEM_vtk(datModel& o_dat)
 		}
 	}
 	fout.close();
+	delete[]mapNodeID;
+	mapNodeID = NULL;
 }

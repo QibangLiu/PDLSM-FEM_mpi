@@ -568,7 +568,7 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 		   }
 
 	   }
-	   delete a_mirror, p_x, b;
+	   delete a_mirror, delete p_x, delete b;
 	   a_mirror = NULL; p_x = NULL; b = NULL;
    }
 
@@ -666,7 +666,8 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 	   }
 
 	   /* Free workspace */
-	   delete[] w, a;
+	   delete[] w;
+	   delete[] a;
 	   w = NULL; a = NULL;
    }
 

@@ -12,6 +12,8 @@ pdPDBEs::pdPDBEs(int nodeID[], int numNode)
 
 pdPDBEs::~pdPDBEs()
 {
+	delete[] ci_nodeID;
+	ci_nodeID = nullptr;
 }
 
 void pdPDBEs::getNodeID(int nID[])

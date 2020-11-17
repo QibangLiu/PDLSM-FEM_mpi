@@ -30,10 +30,10 @@ public:
 	void CMDfile(datModel& o_dat,ifstream &fin);
 	void excuteCMD(datModel& o_dat, vector<string>& tokens);
 	void writeResults(datModel &o_dat);
+	void writeReslutsTOTAL_vtk(datModel& o_dat,  int nTstep);
 private:
 	void writeUofNode(datModel &o_dat);
 	void writeSigofNode(datModel &o_dat);
-	void writeReslutsTOTAL_vtk(datModel &o_dat);
 	void writeResultsPD_vtk(datModel &o_dat);
 	void writeResultsFEM_vtk(datModel& o_dat);
 	void getTitle(datModel &o_dat,char Titl[]);

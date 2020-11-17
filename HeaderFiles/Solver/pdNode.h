@@ -24,6 +24,7 @@ public:
 	void printFinalU(ofstream&PDout);
 	void printDamage(ofstream &fout);
 	void setLocalDamage(double phi);
+	double getLocalDamage();
 	void setNodeType(int val);
 	
 	int getNodeType();

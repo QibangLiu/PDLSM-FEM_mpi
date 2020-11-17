@@ -10,11 +10,14 @@ public:
 	int getNumNODE();
 	double getValue();
 	int getDOF();
+	bool cb_varing;// this ebc is varing or not, during dynamic solving
+	double cd_velocity;// velocity during dynamic solving;
+	double cd_value;
 private:
 	pdfemEssentialBCs();
 	int ci_numNODE;
 	int ci_dof;
-	double cd_value;
+	
 	
 };
 

@@ -1,4 +1,5 @@
 #pragma once
+#include"fioFile.h"
 #include "datModel.h"
 #include"Matrix.h"
 #include"Vector.h"
@@ -27,6 +28,8 @@ public:
 	void Setdof_Index(datModel& o_dat);//set each dof's equation position;
 	void setDeltaMaxMin(datModel& o_dat);// find out the max and min Delta;
 	void setBlockAndFami(datModel& o_dat);// initialize block;
+	void initialBondState(datModel& o_dat);
+	void setNoFailRegion(datModel& o_dat);
 	//============PD algorithem===============================================;
 	//====some auxiliary functions
 	bool segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3]);
@@ -51,7 +54,6 @@ public:
 	void matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
 
 	//functions for 2D && 3D====
-	void initialBondState(datModel& o_dat);
 	double inflFunc(double xi[], pdFamily* p_fami, datModel& o_dat);
 	void assembleInterWorkPD(datModel& o_dat);
 	void assemblePDBEwork(datModel& o_dat);
@@ -74,6 +76,7 @@ public:
 	void assembleSEDbyFEM_CSRformat(datModel& o_dat);//CSR ---assemble strain energy density by fem ;
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
 	//===========Solvers================================
+	void pdfemSolver(datModel& o_dat, fioFiles& o_files);
 	//===================================
 	//====static solver==================
 	//===================================
@@ -83,7 +86,7 @@ public:
 	//===CSR format
 	void setCSRIndexes_gloStiffMat(datModel& o_dat);
 	void pdfemAssembleEquasSys_CSRformat(datModel& o_dat, int numEq);
-	void pdfemStaticSolver_CSRformat(datModel& o_dat);
+	void pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
 	//===================================
 	//===dynamical solver================
 	//===================================
@@ -92,12 +95,14 @@ public:
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
 	void calResultantForce_CSRformat(datModel& o_dat, int numEq);
-	void pdfemDynamicSolver_CSRformat(datModel& o_dat);
+	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files);
 	//==failure criterion
 	double failureCriterion_stretch(datModel& o_dat);
 	double failureCriterion_stress(datModel& o_dat);
-
+	void calLocalDamage(datModel& o_dat);
+	//==vary ebc;
 	void setPrescribeVaryDis(datModel&o_dat);
+
 	void set_step_DispBC_qusia_static(datModel& o_dat);
 	void resetDispBC(datModel& o_dat, double Multip);
 
@@ -158,7 +163,7 @@ private:
 	Vector *cop_F;
 	//==========Storing matrix in CSR format=========
 	double* cdp_Ku,*cdp_KuGlo;// corresponding active dof,unkown displacement; in CRS format;
-	double* cdp_M;// mass and acceleration in CRS format;
+	double* cdp_M, * cdp_MGlo;// mass and acceleration in CRS format;
 	double* cdp_F,*cdp_FGlo, * cdp_Ug;//RHS force, and global displament; mass matrix
 	long long int*cip_ja;//for K and M mat; ja is colume index in CSR format; index of ja may be long long int;
 	long long int*cip_ia; //for K and M mat; ia is row index in CSR format; one-based format;
