@@ -659,6 +659,7 @@ void calMatrixOperations::matGaussJordanInverse( Matrix  *op_a,  Matrix * op_aIn
 		   {
 			   for (int j = 0; j < n; j++)
 			   {
+				   //Eigenvectors(stored columnwise)
 				   op_eigVector->setCoeff(i, j, a[i * lda + j]);
 			   }
 		   }

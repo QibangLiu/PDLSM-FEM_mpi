@@ -13,7 +13,9 @@ datModel::datModel()
 	//=====initial flages;
 	ci_solvFlag = -1;
 	ci_PDBN_ITA_flag = 1;
-	ci_failFlag = 1;
+	ci_failFlag = 1;//0-stress,1-stretch
+	cb_lumpedMass = false;
+	ci_TESflag = 2;
 }
 
 datModel::~datModel()
@@ -499,12 +501,12 @@ int datModel::getnumTstep() const
 
 double datModel::getTstep() const
 {
-	double E, delt_min, rho;
+	/*double E, delt_min, rho;
 	delt_min = cop_geomp->getminDelta();
 	E = cop_material->getE();
 	rho = cop_material->getrho();
-	double dt = cd_dtf * delt_min / sqrt(E / rho);
-	return dt;
+	double dt = cd_dtf * delt_min / sqrt(E / rho);*/
+	return cd_dt;
 }
 
 int datModel::getSaveFreq() const

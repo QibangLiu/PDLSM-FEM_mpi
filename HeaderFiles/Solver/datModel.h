@@ -92,7 +92,7 @@ public:
 	int ci_numCrack;
 	double (*cdp_crack)[3][3];
 	//==solving setting;
-	double cd_dtf;
+	double cd_dt;
 	int ci_numTstep;
 	int ci_savefrequence;
 	//============================================
@@ -102,6 +102,8 @@ public:
 	// PD node on the interface, interact with node in fem domain or not
 	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
 	int ci_failFlag;// 0--equivalent stress; 1--critical stretch;
+	bool cb_lumpedMass;
+	int ci_TESflag;//2: 2nd TES, 3:3rd TES
 	//=============END flags=========================
 
 	//=========NO fail

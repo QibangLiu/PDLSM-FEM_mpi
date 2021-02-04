@@ -12,7 +12,7 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	cop_Ku = NULL; cop_F = NULL;
 	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_Ku = NULL, cdp_Ug = NULL, cdp_M = NULL;
 	cdp_FGlo = NULL, cdp_KuGlo = NULL;
-
+	cb_InteralForce = false;
 	//===set data model ==================================
 	
 	setDatModel(o_dat);
@@ -528,8 +528,8 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
 							dist = sqrt((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
 								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
-							if ((dist > maxDel * 1.0E-16 && dist < (delta_k + maxDel * 1.0E-15)
-								|| dist> maxDel * 1.0E-16 && dist < (delta_j + maxDel * 1.0E-15)))
+							if (dist > maxDel * 1.0E-16 &&( dist < (delta_k + maxDel * 1.0E-15)
+								 || dist < (delta_j + maxDel * 1.0E-15)))
 							{
 								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
 							}
@@ -973,7 +973,13 @@ void pdsolve::setNoFailRegion(datModel& o_dat)
 double pdsolve::inflFunc( double xi[], pdFamily* p_fami, datModel&o_dat)
 {
 	double delt = p_fami->gethorizon();
-	double a = 1/1.0;
+	/*double fac = o_dat.op_getGeomP()->getFactor();
+	double delt =fac*o_dat.op_getGeomP()->getmaxDelta();*/
+	/*if (ci_rank==0)
+	{
+		cout << "==" << p_fami->gethorizon() << "\t max=" << delt << endl;
+	}*/
+	double a = 1/4.0;
 	double Aa = a * a;
 	double omega = exp(-(xi[0] * xi[0] + xi[1] * xi[1]+ xi[2] * xi[2])
 		/ Aa / delt / delt);
@@ -1077,7 +1083,7 @@ void pdsolve::shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat)
 			xi[ii] = xj[ii] - xk[ii];
 		}
 		omega = inflFunc(xi, p_fami, o_dat);
-		double temp[9][9] = { xi[0] * xi[0],xi[0] * xi[1],xi[0] * xi[2],0.5 * xi[0] * xi[0] * xi[0],0.5 * xi[0] * xi[1] * xi[1],0.5 * xi[0] * xi[2] * xi[2],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],
+		/*double temp[9][9] = { xi[0] * xi[0],xi[0] * xi[1],xi[0] * xi[2],0.5 * xi[0] * xi[0] * xi[0],0.5 * xi[0] * xi[1] * xi[1],0.5 * xi[0] * xi[2] * xi[2],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],
 							xi[0] * xi[1],xi[1] * xi[1],xi[1] * xi[2],0.5 * xi[0] * xi[0] * xi[1],0.5 * xi[1] * xi[1] * xi[1],0.5 * xi[1] * xi[2] * xi[2],xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[2],xi[1] * xi[1] * xi[2],
 							xi[0] * xi[2],xi[1] * xi[2],xi[2] * xi[2],0.5 * xi[0] * xi[0] * xi[2],0.5 * xi[1] * xi[1] * xi[2],0.5 * xi[2] * xi[2] * xi[2],xi[0] * xi[1] * xi[2],xi[0] * xi[2] * xi[2],xi[1] * xi[2] * xi[2],
 							xi[0] * xi[0] * xi[0],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],0.5 * xi[0] * xi[0] * xi[0] * xi[0],0.5 * xi[0] * xi[0] * xi[1] * xi[1],0.5 * xi[0] * xi[0] * xi[2] * xi[2],xi[0] * xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[0] * xi[2],xi[0] * xi[0] * xi[1] * xi[2],
@@ -1086,12 +1092,132 @@ void pdsolve::shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat)
 							xi[0] * xi[0] * xi[1],xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[2],0.5 * xi[0] * xi[0] * xi[0] * xi[1],0.5 * xi[0] * xi[1] * xi[1] * xi[1],0.5 * xi[0] * xi[1] * xi[2] * xi[2],xi[0] * xi[0] * xi[1] * xi[1],xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[1] * xi[1] * xi[2],
 							xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],xi[0] * xi[2] * xi[2],0.5 * xi[0] * xi[0] * xi[0] * xi[2],0.5 * xi[0] * xi[1] * xi[1] * xi[2],0.5 * xi[0] * xi[2] * xi[2] * xi[2],xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[0] * xi[2] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],
 							xi[0] * xi[1] * xi[2],xi[1] * xi[1] * xi[2],xi[1] * xi[2] * xi[2],0.5 * xi[0] * xi[0] * xi[1] * xi[2],0.5 * xi[1] * xi[1] * xi[1] * xi[2],0.5 * xi[1] * xi[2] * xi[2] * xi[2],xi[0] * xi[1] * xi[1] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],xi[1] * xi[1] * xi[2] * xi[2]
+		};*/
+
+		double temp[9][9] = { xi[0] * xi[0],xi[0] * xi[1],xi[0] * xi[2] ,(xi[0] * xi[0] * xi[0]) * 0.5,(xi[0] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1],xi[0] * xi[1] * xi[2],xi[0] * xi[0] * xi[2] ,
+		xi[0] * xi[1],xi[1] * xi[1],xi[1] * xi[2], (xi[0] * xi[0] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1],xi[1] * xi[1] * xi[2],xi[0] * xi[1] * xi[2],
+			xi[0] * xi[2],xi[1] * xi[2],xi[2] * xi[2], (xi[0] * xi[0] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[2]) * 0.5,(xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[2],xi[1] * xi[2] * xi[2],xi[0] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[0],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],(xi[0] * xi[0] * xi[0] * xi[0]) * 0.5,(xi[0] * xi[0] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[0] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[0] * xi[0] * xi[2],
+			xi[0] * xi[1] * xi[1],xi[1] * xi[1] * xi[1],xi[1] * xi[1] * xi[2],(xi[0] * xi[0] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1] * xi[1],xi[1] * xi[1] * xi[1] * xi[2],xi[0] * xi[1] * xi[1] * xi[2],
+			xi[0] * xi[2] * xi[2],xi[1] * xi[2] * xi[2],xi[2] * xi[2] * xi[2],(xi[0] * xi[0] * xi[2] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[2] * xi[2]) * 0.5,(xi[2] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[2] * xi[2],xi[1] * xi[2] * xi[2] * xi[2],xi[0] * xi[2] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[1],xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[2],(xi[0] * xi[0] * xi[0] * xi[1]) * 0.5,(xi[0] * xi[1] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[1] * xi[2],xi[0] * xi[0] * xi[1] * xi[2],
+			 xi[0] * xi[1] * xi[2],xi[1] * xi[1] * xi[2],xi[1] * xi[2] * xi[2],(xi[0] * xi[0] * xi[1] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[1] * xi[2]) * 0.5,(xi[1] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1] * xi[2],xi[1] * xi[1] * xi[2] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],xi[0] * xi[2] * xi[2],(xi[0] * xi[0] * xi[0] * xi[2]) * 0.5,(xi[0] * xi[1] * xi[1] * xi[2]) * 0.5,(xi[0] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],xi[0] * xi[0] * xi[2] * xi[2],
 		};
+
 		for (int row = 0; row < 9; row++)
 		{
 			for (int col = 0; col < 9; col++)
 			{
 				A->addCoeff(row, col, omega * dv * temp[row][col]);
+			}
+		}
+	}
+}
+
+void pdsolve::shapTens3D3rd(Matrix* A, pdFamily* p_fami, datModel& o_dat)
+{
+	// matrix A's size is 9*9;
+	A->zero();
+	double xi[3], omega, xj[3], xk[3], dv;
+	int Nid_m, Nid_k;
+	int numNodeOFfami = p_fami->getNumNode();
+	Nid_k = p_fami->getNodeID(0);
+	o_dat.op_getNode(Nid_k - 1)->getcoor(xk);
+	for (int j = 1; j < numNodeOFfami; j++)
+	{
+		Nid_m = p_fami->getNodeID(j);
+		o_dat.op_getNode(Nid_m - 1)->getcoor(xj);
+		dv = o_dat.op_getNode(Nid_m - 1)->getvolume();
+		for (int ii = 0; ii < 3; ii++)
+		{
+			xi[ii] = xj[ii] - xk[ii];
+		}
+		omega = inflFunc(xi, p_fami, o_dat);
+		double tempA1[9][9] = { xi[0] * xi[0],xi[0] * xi[1],xi[0] * xi[2] ,(xi[0] * xi[0] * xi[0]) * 0.5,(xi[0] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1],xi[0] * xi[1] * xi[2],xi[0] * xi[0] * xi[2] ,
+		xi[0] * xi[1],xi[1] * xi[1],xi[1] * xi[2], (xi[0] * xi[0] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1],xi[1] * xi[1] * xi[2],xi[0] * xi[1] * xi[2],
+			xi[0] * xi[2],xi[1] * xi[2],xi[2] * xi[2], (xi[0] * xi[0] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[2]) * 0.5,(xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[2],xi[1] * xi[2] * xi[2],xi[0] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[0],xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[2],(xi[0] * xi[0] * xi[0] * xi[0]) * 0.5,(xi[0] * xi[0] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[0] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[0] * xi[1],xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[0] * xi[0] * xi[2],
+			xi[0] * xi[1] * xi[1],xi[1] * xi[1] * xi[1],xi[1] * xi[1] * xi[2],(xi[0] * xi[0] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[1] * xi[1]) * 0.5,(xi[1] * xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1] * xi[1],xi[1] * xi[1] * xi[1] * xi[2],xi[0] * xi[1] * xi[1] * xi[2],
+			xi[0] * xi[2] * xi[2],xi[1] * xi[2] * xi[2],xi[2] * xi[2] * xi[2],(xi[0] * xi[0] * xi[2] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[2] * xi[2]) * 0.5,(xi[2] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[2] * xi[2],xi[1] * xi[2] * xi[2] * xi[2],xi[0] * xi[2] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[1],xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[2],(xi[0] * xi[0] * xi[0] * xi[1]) * 0.5,(xi[0] * xi[1] * xi[1] * xi[1]) * 0.5,(xi[0] * xi[1] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1] * xi[1],xi[0] * xi[1] * xi[1] * xi[2],xi[0] * xi[0] * xi[1] * xi[2],
+			 xi[0] * xi[1] * xi[2],xi[1] * xi[1] * xi[2],xi[1] * xi[2] * xi[2],(xi[0] * xi[0] * xi[1] * xi[2]) * 0.5,(xi[1] * xi[1] * xi[1] * xi[2]) * 0.5,(xi[1] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[1] * xi[1] * xi[2],xi[1] * xi[1] * xi[2] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],
+			xi[0] * xi[0] * xi[2],xi[0] * xi[1] * xi[2],xi[0] * xi[2] * xi[2],(xi[0] * xi[0] * xi[0] * xi[2]) * 0.5,(xi[0] * xi[1] * xi[1] * xi[2]) * 0.5,(xi[0] * xi[2] * xi[2] * xi[2]) * 0.5,xi[0] * xi[0] * xi[1] * xi[2],xi[0] * xi[1] * xi[2] * xi[2],xi[0] * xi[0] * xi[2] * xi[2]
+		};
+
+		double tempA2[9][10] = { (xi[0]*xi[0]*xi[0]*xi[0]) / 6,(xi[0] * xi[1]*xi[1]*xi[1]) / 6,(xi[0] * xi[2]*xi[2]*xi[2]) / 6,(xi[0]*xi[0]*xi[0] * xi[1]) / 2,(xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[0]*xi[0] * xi[2]*xi[2]) / 2,(xi[0]*xi[0]*xi[0] * xi[2]) / 2,xi[0]*xi[0] * xi[1] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[1]) / 6,(xi[1]*xi[1]*xi[1]*xi[1]) / 6,(xi[1] * xi[2]*xi[2]*xi[2]) / 6,(xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[0] * xi[1]*xi[1]*xi[1]) / 2,(xi[1]*xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]) / 2,(xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[0]*xi[0] * xi[1] * xi[2]) / 2,xi[0] * xi[1]*xi[1] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[2]) / 6,(xi[1]*xi[1]*xi[1] * xi[2]) / 6,(xi[2]*xi[2]*xi[2]*xi[2]) / 6,(xi[0]*xi[0] * xi[1] * xi[2]) / 2,(xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]) / 2,(xi[1] * xi[2]*xi[2]*xi[2]) / 2,(xi[0] * xi[2]*xi[2]*xi[2]) / 2,(xi[0]*xi[0] * xi[2]*xi[2]) / 2,xi[0] * xi[1] * xi[2]*xi[2],
+		(pow(xi[0],5)) / 6,(xi[0]*xi[0] * xi[1]*xi[1]*xi[1]) / 6,(xi[0]*xi[0] * xi[2]*xi[2]*xi[2]) / 6,(xi[0]*xi[0]*xi[0]*xi[0] * xi[1]) / 2,(xi[0]*xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[0]*xi[0]*xi[0] * xi[2]*xi[2]) / 2,(xi[0]*xi[0]*xi[0]*xi[0] * xi[2]) / 2,xi[0]*xi[0]*xi[0] * xi[1] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[1]*xi[1]) / 6,(pow(xi[1],5)) / 6,(xi[1]*xi[1] * xi[2]*xi[2]*xi[2]) / 6,(xi[0]*xi[0] * xi[1]*xi[1]*xi[1]) / 2,(xi[1]*xi[1]*xi[1]*xi[1] * xi[0]) / 2,(xi[1]*xi[1]*xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1]*xi[1] * xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,xi[1]*xi[1]*xi[1] * xi[0] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[2]*xi[2]) / 6,(xi[1]*xi[1]*xi[1] * xi[2]*xi[2]) / 6,(pow(xi[2],5)) / 6,(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]*xi[2]) / 2,(xi[2]*xi[2]*xi[2]*xi[2] * xi[1]) / 2,(xi[2]*xi[2]*xi[2]*xi[2] * xi[0]) / 2,(xi[0]*xi[0] * xi[2]*xi[2]*xi[2]) / 2,xi[2]*xi[2]*xi[2] * xi[0] * xi[1],
+	(xi[0]*xi[0]*xi[0]*xi[0] * xi[1]) / 6,(xi[1]*xi[1]*xi[1]*xi[1] * xi[0]) / 6,(xi[2]*xi[2]*xi[2] * xi[0] * xi[1]) / 6,(xi[0]*xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[0]*xi[0] * xi[1]*xi[1]*xi[1]) / 2,(xi[1]*xi[1]*xi[1] * xi[0] * xi[2]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[0]*xi[0]*xi[0] * xi[1] * xi[2]) / 2,xi[0]*xi[0] * xi[1]*xi[1] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[1] * xi[2]) / 6,(xi[1]*xi[1]*xi[1]*xi[1] * xi[2]) / 6,(xi[2]*xi[2]*xi[2]*xi[2] * xi[1]) / 6,(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1]*xi[1] * xi[0] * xi[2]) / 2,(xi[1]*xi[1]*xi[1] * xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]*xi[2]) / 2,(xi[2]*xi[2]*xi[2] * xi[0] * xi[1]) / 2,(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,xi[1]*xi[1] * xi[0] * xi[2]*xi[2],
+	(xi[0]*xi[0]*xi[0]*xi[0] * xi[2]) / 6,(xi[1]*xi[1]*xi[1] * xi[0] * xi[2]) / 6,(xi[2]*xi[2]*xi[2]*xi[2] * xi[0]) / 6,(xi[0]*xi[0]*xi[0] * xi[1] * xi[2]) / 2,(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,(xi[2]*xi[2]*xi[2] * xi[0] * xi[1]) / 2,(xi[0]*xi[0] * xi[2]*xi[2]*xi[2]) / 2,(xi[0]*xi[0]*xi[0] * xi[2]*xi[2]) / 2,xi[0]*xi[0] * xi[1] * xi[2]*xi[2]
+		};
+
+		double A31[10][3] = {
+			xi[0]*xi[0]*xi[0]*xi[0],xi[0]*xi[0]*xi[0] * xi[1],xi[0]*xi[0]*xi[0] * xi[2],
+	xi[0] * xi[1]*xi[1]*xi[1],xi[1]*xi[1]*xi[1]*xi[1],xi[1]*xi[1]*xi[1] * xi[2],
+	xi[0] * xi[2]*xi[2]*xi[2],xi[1] * xi[2]*xi[2]*xi[2],xi[2]*xi[2]*xi[2]*xi[2],
+	xi[0]*xi[0]*xi[0] * xi[1],xi[0]*xi[0] * xi[1]*xi[1],xi[0]*xi[0] * xi[1] * xi[2],
+	xi[0]*xi[0] * xi[1]*xi[1],xi[0] * xi[1]*xi[1]*xi[1],xi[0] * xi[1]*xi[1] * xi[2],
+	xi[0] * xi[1]*xi[1] * xi[2],xi[1]*xi[1]*xi[1] * xi[2],xi[1]*xi[1] * xi[2]*xi[2],
+	xi[0] * xi[1] * xi[2]*xi[2],xi[1]*xi[1] * xi[2]*xi[2],xi[1] * xi[2]*xi[2]*xi[2],
+	xi[0]*xi[0] * xi[2]*xi[2],xi[0] * xi[1] * xi[2]*xi[2],xi[0] * xi[2]*xi[2]*xi[2],
+	xi[0]*xi[0]*xi[0] * xi[2],xi[0]*xi[0] * xi[1] * xi[2],xi[0]*xi[0] * xi[2]*xi[2],
+	xi[0]*xi[0] * xi[1] * xi[2],xi[0] * xi[1]*xi[1] * xi[2],xi[0] * xi[1] * xi[2]*xi[2]
+		};
+		
+		double A32[10][6] = { (pow(xi[0], 5)) / 2,(xi[0]*xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[0]*xi[0]*xi[0] * xi[2]*xi[2]) / 2,xi[0]*xi[0]*xi[0]*xi[0] * xi[1],xi[0]*xi[0]*xi[0] * xi[1] * xi[2],xi[0]*xi[0]*xi[0]*xi[0] * xi[2],
+	(xi[0]*xi[0] * xi[1]*xi[1]*xi[1]) / 2,(pow(xi[1], 5)) / 2,(xi[1]*xi[1]*xi[1] * xi[2]*xi[2]) / 2,xi[1]*xi[1]*xi[1]*xi[1] * xi[0],xi[1]*xi[1]*xi[1]*xi[1] * xi[2],xi[1]*xi[1]*xi[1] * xi[0] * xi[2],
+	(xi[0]*xi[0] * xi[2]*xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]*xi[2]) / 2,(pow(xi[2], 5)) / 2,xi[2]*xi[2]*xi[2] * xi[0] * xi[1],xi[2]*xi[2]*xi[2]*xi[2] * xi[1],xi[2]*xi[2]*xi[2]*xi[2] * xi[0],
+	(xi[0]*xi[0]*xi[0]*xi[0] * xi[1]) / 2,(xi[0]*xi[0] * xi[1]*xi[1]*xi[1]) / 2,(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,xi[0]*xi[0]*xi[0] * xi[1]*xi[1],xi[0]*xi[0] * xi[1]*xi[1] * xi[2],xi[0]*xi[0]*xi[0] * xi[1] * xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[1]*xi[1]) / 2,(xi[1]*xi[1]*xi[1]*xi[1] * xi[0]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,xi[0]*xi[0] * xi[1]*xi[1]*xi[1],xi[1]*xi[1]*xi[1] * xi[0] * xi[2],xi[0]*xi[0] * xi[1]*xi[1] * xi[2],
+	(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1]*xi[1]*xi[1] * xi[2]) / 2,(xi[1]*xi[1] * xi[2]*xi[2]*xi[2]) / 2,xi[1]*xi[1]*xi[1] * xi[0] * xi[2],xi[1]*xi[1]*xi[1] * xi[2]*xi[2],xi[1]*xi[1] * xi[0] * xi[2]*xi[2],
+	(xi[0]*xi[0] * xi[1] * xi[2]*xi[2]) / 2,(xi[1]*xi[1]*xi[1] * xi[2]*xi[2]) / 2,(xi[2]*xi[2]*xi[2]*xi[2] * xi[1]) / 2,xi[1]*xi[1] * xi[0] * xi[2]*xi[2],xi[1]*xi[1] * xi[2]*xi[2]*xi[2],xi[2]*xi[2]*xi[2] * xi[0] * xi[1],
+	(xi[0]*xi[0]*xi[0] * xi[2]*xi[2]) / 2,(xi[1]*xi[1] * xi[0] * xi[2]*xi[2]) / 2,(xi[2]*xi[2]*xi[2]*xi[2] * xi[0]) / 2,xi[0]*xi[0] * xi[1] * xi[2]*xi[2],xi[2]*xi[2]*xi[2] * xi[0] * xi[1],xi[0]*xi[0] * xi[2]*xi[2]*xi[2],
+	(xi[0]*xi[0]*xi[0]*xi[0] * xi[2]) / 2,(xi[0]*xi[0] * xi[1]*xi[1] * xi[2]) / 2,(xi[0]*xi[0] * xi[2]*xi[2]*xi[2]) / 2,xi[0]*xi[0]*xi[0] * xi[1] * xi[2],xi[0]*xi[0] * xi[1] * xi[2]*xi[2],xi[0]*xi[0]*xi[0] * xi[2]*xi[2],
+	(xi[0]*xi[0]*xi[0] * xi[1] * xi[2]) / 2,(xi[1]*xi[1]*xi[1] * xi[0] * xi[2]) / 2,(xi[2]*xi[2]*xi[2] * xi[0] * xi[1]) / 2,xi[0]*xi[0] * xi[1]*xi[1] * xi[2],xi[1]*xi[1] * xi[0] * xi[2]*xi[2],xi[0]*xi[0] * xi[1] * xi[2]*xi[2] 
+		};
+
+		double A33[10][10] = {
+			(pow(xi[0],6)) / 6,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[1]) / 6,(xi[0] * xi[0] * xi[0] * xi[2] * xi[2] * xi[2]) / 6,(pow(xi[0],5) * xi[1]) / 2,(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[1]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[0] * xi[2] * xi[2]) / 2,(pow(xi[0],5) * xi[2]) / 2,xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[1]) / 6,(pow(xi[1],6)) / 6,(xi[1] * xi[1] * xi[1] * xi[2] * xi[2] * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[0]) / 2,(pow(xi[1],5) * xi[0]) / 2,(pow(xi[1],5) * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2]) / 2,xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[2] * xi[2] * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[2] * xi[2] * xi[2]) / 6,(pow(xi[2],6)) / 6,(xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[1] * xi[1]) / 2,(pow(xi[2],5) * xi[1]) / 2,(pow(xi[2],5) * xi[0]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[0]) / 2,xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[1],
+	(pow(xi[0],5) * xi[1]) / 6,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[0]) / 6,(xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1]) / 6,(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[1]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[1]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2]) / 2,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[2]) / 2,xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[1]) / 6,(pow(xi[1],5) * xi[0]) / 6,(xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1]) / 6,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[1]) / 2,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[0]) / 2,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2]) / 2,xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2]) / 6,(pow(xi[1],5) * xi[2]) / 6,(xi[2] * xi[2] * xi[2] * xi[2] * xi[1] * xi[1]) / 6,(xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[2] * xi[2] * xi[2]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1]) / 2,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[1] * xi[2] * xi[2]) / 6,(pow(xi[2],5) * xi[1]) / 6,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[2] * xi[2] * xi[2]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[1] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1]) / 2,xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1],
+	(xi[0] * xi[0] * xi[0] * xi[0] * xi[2] * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2]) / 6,(pow(xi[2],5) * xi[0]) / 6,(xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[0]) / 2,(xi[0] * xi[0] * xi[0] * xi[2] * xi[2] * xi[2]) / 2,xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1],
+	(pow(xi[0],5) * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2]) / 6,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[0]) / 6,(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2]) / 2,(xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1]) / 2,(xi[0] * xi[0] * xi[0] * xi[2] * xi[2] * xi[2]) / 2,(xi[0] * xi[0] * xi[0] * xi[0] * xi[2] * xi[2]) / 2,xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2],
+	(xi[0] * xi[0] * xi[0] * xi[0] * xi[1] * xi[2]) / 6,(xi[1] * xi[1] * xi[1] * xi[1] * xi[0] * xi[2]) / 6,(xi[2] * xi[2] * xi[2] * xi[2] * xi[0] * xi[1]) / 6,(xi[0] * xi[0] * xi[0] * xi[1] * xi[1] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[0] * xi[2]) / 2,(xi[1] * xi[1] * xi[1] * xi[0] * xi[2] * xi[2]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[1] * xi[1]) / 2,(xi[2] * xi[2] * xi[2] * xi[0] * xi[0] * xi[1]) / 2,(xi[0] * xi[0] * xi[0] * xi[1] * xi[2] * xi[2]) / 2,xi[0] * xi[0] * xi[1] * xi[1] * xi[2] * xi[2]
+		};
+
+		for (int row = 0; row < 9; row++)
+		{
+			for (int col = 0; col < 9; col++)
+			{
+				A->addCoeff(row, col, omega * dv * tempA1[row][col]);
+			}
+			for (int col = 9; col < 19; col++)
+			{
+				A->addCoeff(row, col, omega * dv * tempA2[row][col-9]);
+			}
+		}
+		for (int row = 9; row < 19; row++)
+		{
+			for (int col = 0; col < 3; col++)
+			{
+				A->addCoeff(row, col, omega * dv * A31[row-9][col]);
+			}
+			for (int col = 3; col < 9; col++)
+			{
+				A->addCoeff(row, col, omega * dv * A32[row-9][col-3]);
+			}
+			for (int col = 9; col < 19; col++)
+			{
+				A->addCoeff(row, col, omega * dv * A33[row-9][col-9]);
 			}
 		}
 	}
@@ -1138,8 +1264,51 @@ void pdsolve::vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, doub
 	vec_xi->setCoeff(4, xi[1] * xi[1]);
 	vec_xi->setCoeff(5, xi[2] * xi[2]);
 	vec_xi->setCoeff(6, xi[0] * xi[1]);
-	vec_xi->setCoeff(7, xi[0] * xi[2]);
-	vec_xi->setCoeff(8, xi[1] * xi[2]);
+	vec_xi->setCoeff(7, xi[1] * xi[2]);
+	vec_xi->setCoeff(8, xi[2] * xi[0]);
+	//===solve==
+	matoperat.PLUSolve(A, vec_xi, vecg);
+	//==assign==
+	g[0] = vecg->d_getCoeff(0);
+	g[1] = vecg->d_getCoeff(1);
+	g[2] = vecg->d_getCoeff(2);
+	for (int i = 0; i < 6; i++)
+	{
+		d[i] = vecg->d_getCoeff(i + 3);
+	}
+	delete vec_xi;
+	delete vecg;
+	vec_xi = NULL;
+	vecg = NULL;
+}
+
+void pdsolve::vec_gd3D3rd(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat)
+{
+	// A(p,q) size 19*19;
+	Vector* vec_xi, * vecg;
+	vec_xi = new Vector(19);
+	vecg = new Vector(19);
+	//=====
+	vec_xi->setCoeff(0, xi[0]);
+	vec_xi->setCoeff(1, xi[1]);
+	vec_xi->setCoeff(2, xi[2]);
+	vec_xi->setCoeff(3, xi[0] * xi[0]);
+	vec_xi->setCoeff(4, xi[1] * xi[1]);
+	vec_xi->setCoeff(5, xi[2] * xi[2]);
+	vec_xi->setCoeff(6, xi[0] * xi[1]);
+	vec_xi->setCoeff(7, xi[1] * xi[2]);
+	vec_xi->setCoeff(8, xi[2] * xi[0]);
+	//==r3
+	vec_xi->setCoeff(9, xi[0] * xi[0] * xi[0]);
+	vec_xi->setCoeff(10, xi[1] * xi[1] * xi[1]);
+	vec_xi->setCoeff(11, xi[2] * xi[2] * xi[2]);
+	vec_xi->setCoeff(12, xi[0] * xi[0] * xi[1]);
+	vec_xi->setCoeff(13, xi[0] * xi[1] * xi[1]);
+	vec_xi->setCoeff(14, xi[1] * xi[1] * xi[2]);
+	vec_xi->setCoeff(15, xi[1] * xi[2] * xi[2]);
+	vec_xi->setCoeff(16, xi[0] * xi[2] * xi[2]);
+	vec_xi->setCoeff(17, xi[0] * xi[0] * xi[2]);
+	vec_xi->setCoeff(18, xi[0] * xi[1] * xi[2]);
 	//===solve==
 	matoperat.PLUSolve(A, vec_xi, vecg);
 	//==assign==
@@ -1200,7 +1369,14 @@ void pdsolve::matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_
 	int mu_km = p_fami->getbondstate(m);
 
 	double g[3], d[6], omega, temp, trD;
-	vec_gd3D(g, d, A, p_fami, xi, o_dat);
+	if (o_dat.ci_TESflag==2)
+	{
+		vec_gd3D(g, d, A, p_fami, xi, o_dat);
+	}
+	else if (o_dat.ci_TESflag==3)
+	{
+		vec_gd3D3rd(g, d, A, p_fami, xi, o_dat);
+	}
 	omega = inflFunc(xi, p_fami, o_dat);
 	trD = d[0] + d[1] + d[2];
 	//==assin values
@@ -1209,12 +1385,12 @@ void pdsolve::matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_
 	temp = mu_km * omega * (cd_lambda + cd_mu) * d[3];
 	G->setCoeff(0, 1, temp);
 	G->setCoeff(1, 0, temp);
-	temp = mu_km * omega * (cd_lambda + cd_mu) * d[4];
+	temp = mu_km * omega * (cd_lambda + cd_mu) * d[5];
 	G->setCoeff(0, 2, temp);
 	G->setCoeff(2, 0, temp);
 	temp = mu_km * omega * ((cd_mu + cd_lambda) * d[1] + cd_mu *trD);
 	G->setCoeff(1, 1, temp);
-	temp = mu_km * omega * (cd_lambda + cd_mu) * d[5];
+	temp = mu_km * omega * (cd_lambda + cd_mu) * d[4];
 	G->setCoeff(1, 2, temp);
 	G->setCoeff(2, 1, temp);
 	temp = mu_km * omega * ((cd_mu + cd_lambda) * d[2] + cd_mu * trD);
@@ -1256,8 +1432,16 @@ void pdsolve::matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat)
 {
 	H->zero();
 	Matrix* A, * G;
-	A = new Matrix(9, 9);
-	shapTens3D(A, p_fami, o_dat);
+	if (o_dat.ci_TESflag==2)
+	{
+		A = new Matrix(9, 9);
+		shapTens3D(A, p_fami, o_dat);
+	}
+	else if (o_dat.ci_TESflag == 3)
+	{
+		A = new Matrix(19, 19);
+		shapTens3D3rd(A, p_fami, o_dat);
+	}
 	G = new Matrix(3, 3);
 	double dv_m, temp;
 	int  NID_m;
@@ -1279,6 +1463,7 @@ void pdsolve::matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat)
 	}
 	delete A, delete G;
 	A = NULL; G = NULL;
+	
 }
 
 void pdsolve::assembleInterWorkPD(datModel & o_dat)
@@ -1425,7 +1610,7 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 						{
 							
 							temp = -(H->d_getCoeff(i, numDime * m + j) * dv_k);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce == false)
 							{
 								// non-dynamic solver;
 								eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1485,7 +1670,7 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 						for (int j = 0; j < numDime; j++)
 						{
 							temp = -(H->d_getCoeff(i, numDime * m + j) * dv_k);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce == false)
 							{
 								// non-dynamic solver;
 								eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1563,8 +1748,21 @@ void pdsolve::matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat)
 {
 	C->zero();
 	Matrix* A;
-	A = new Matrix(9, 9);
-	shapTens3D(A, p_fami, o_dat);
+	if (o_dat.ci_TESflag == 2)
+	{
+		A = new Matrix(9, 9);
+		shapTens3D(A, p_fami, o_dat);
+	}
+	else if (o_dat.ci_TESflag == 3)
+	{
+		A = new Matrix(19, 19);
+		shapTens3D3rd(A, p_fami, o_dat);
+	}
+	else
+	{
+		printf("ERROR: TES flag is wrong\n");
+		exit(0);
+	}
 	double g[3], d[6];
 	double xk[3], xm[3], xi[3], dv_m, omega;
 	int NID_k, NID_m, mu_km;
@@ -1586,7 +1784,14 @@ void pdsolve::matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat)
 		}
 		mu_km = p_fami->getbondstate(m);
 		omega = inflFunc(xi, p_fami, o_dat);
-		vec_gd3D(g, d, A, p_fami, xi, o_dat);
+		if (o_dat.ci_TESflag == 2)
+		{
+			vec_gd3D(g, d, A, p_fami, xi, o_dat);
+		}
+		else if (o_dat.ci_TESflag == 3)
+		{
+			vec_gd3D3rd(g, d, A, p_fami, xi, o_dat);
+		}
 		for (int i = 0; i < 3; i++)
 		{
 			d_c[i]= mu_km * omega * g[i] * dv_m;
@@ -1950,7 +2155,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce==false)
 							{
 								//non-dynamical solver
 								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -1989,7 +2194,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce == false)
 							{
 								//non-dynamic solver;
 								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -2040,7 +2245,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 						{
 							
 							temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce == false)
 							{
 								//non-dynamic solver;
 								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -2079,7 +2284,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 						for (int j = 0; j < 2; j++)
 						{
 							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag)
+							if (cb_InteralForce == false)
 							{
 								//non-dynamic solver;
 								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
@@ -2202,7 +2407,7 @@ void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
 									{
 
 										temp = finMat->d_getCoeff(i * 3 + j, 3 * m + jj);
-										if (o_dat.ci_solvFlag)
+										if (cb_InteralForce == false)
 										{
 											//non-dynamic solver
 											eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
@@ -2301,7 +2506,7 @@ void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
 							{
 
 								temp = finMat->d_getCoeff(i * 3 + j, 3 * m + jj);
-								if (o_dat.ci_solvFlag)
+								if (cb_InteralForce == false)
 								{
 									//non-dynamic solver
 									eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
@@ -2390,6 +2595,59 @@ void pdsolve::assembleMassMatPD(datModel & o_dat)
 			}
 		}
 	}
+}
+
+void pdsolve::assembleLumpedMass(datModel& o_dat, int numEqua)
+{
+	cdp_M = new double[numEqua];
+	cdp_MGlo = new double[numEqua];
+	for (long long int i = 0; i < numEqua; i++)
+	{
+		cdp_M[i] = 0;
+		cdp_MGlo[i] = 0;
+	}
+	//=======
+	int totNumEle, startP, endP;
+	totNumEle = o_dat.getTotnumEle();
+	startP = ci_rank * totNumEle / ci_numProce;
+	endP = (ci_rank + 1) * totNumEle / ci_numProce;
+	//==
+	int numDime, eqIndex, numNodeELE, *conNID;
+	double(*xN)[3],rho,dv, VolEle = 0;
+	numDime = o_dat.ci_Numdimen;
+	rho = o_dat.op_getmaterial()->getrho();
+	for (int ele = startP; ele < endP; ele++)
+	{
+		numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
+		conNID = new int[numNodeELE];
+		xN = new double[numNodeELE][3];
+		o_dat.op_getEles(ele)->getConNid(conNID);
+		for (int nd = 0; nd < numNodeELE; nd++)
+		{
+			o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
+		}
+		//Gauss integration to get element volumn
+		VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+		dv = VolEle / numNodeELE;
+		for (int nd = 0; nd < numNodeELE; nd++)
+		{
+			for (int i = 0; i < numDime; i++)
+			{
+				eqIndex = o_dat.op_getNode(conNID[nd] - 1)->op_getDof(i)->i_getEqInde();
+				if (eqIndex != -1)
+				{
+					cdp_M[eqIndex] = cdp_M[eqIndex] + dv * rho;
+				}
+			}
+		}
+		delete[] conNID, delete[] xN;
+		conNID = NULL, xN = NULL;
+
+	}
+	//===
+	MPI_Allreduce(cdp_M, cdp_MGlo, numEqua, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	delete[] cdp_M;
+	cdp_M = NULL;
 }
 
 void pdsolve::matMathcalNt(Matrix* mNt, double p, double q)
@@ -2617,7 +2875,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 							{
 								
 								temp = Ke->d_getCoeff(numDime * i + ii, numDime * j + jj);
-								if (o_dat.ci_solvFlag)
+								if (cb_InteralForce == false)
 								{
 									//cout << "== " << ci_solvFlag << endl;
 									//non-dynamic solver;
@@ -2677,16 +2935,17 @@ void pdsolve::calExternalForce_CSRformat(datModel& o_dat)
 	//==================cal Nodal force from Nature force;
 	//=====3D
 	int numTracBC = o_dat.getTotnumNaturalBCs();
-	startP = ci_rank * numTracBC / ci_numProce;
-	endP = (ci_rank + 1) * numTracBC / ci_numProce;
+	
 	double tVal, (*xN)[3];
 	int numEle, numNoEle, * conNid;
 	Vector* Fe;
-	for (int nBC = startP; nBC < endP; nBC++)
+	for (int nBC = 0; nBC < numTracBC; nBC++)
 	{
 		tVal = o_dat.op_getNaturalBC(nBC)->getValue();
 		numEle = o_dat.op_getNaturalBC(nBC)->getNumEle();
-		for (int ele = 0; ele < numEle; ele++)
+		startP = ci_rank * numEle / ci_numProce;
+		endP = (ci_rank + 1) * numEle / ci_numProce;
+		for (int ele = startP; ele < endP; ele++)
 		{
 			numNoEle = o_dat.op_getNaturalBC(nBC)->op_getNBCsEle(ele)->getNumNodes();
 			xN = new double[numNoEle][3];
@@ -2729,11 +2988,39 @@ void pdsolve::pdfemSolver(datModel& o_dat, fioFiles& o_files)
 		//dynamic solver;
 		pdfemDynamicSolver_CSRformat(o_dat, o_files);
 	}
+	else if (o_dat.ci_solvFlag == 2)
+	{
+		//quasi static solver;
+		pdfemQuasiStaticSolver_CSRformat(o_dat, o_files);
+	}
 	else
 	{
 		printf("ERROR: solver flag is wrong\n");
 		exit(0);
 	}
+}
+
+void pdsolve::calAcceleration(int numEq, double* dp_A)
+{
+	for (int i = 0; i < numEq; i++)
+	{
+		dp_A[i] = cdp_FGlo[i] / cdp_MGlo[i];
+	}
+}
+
+void pdsolve::timeIntegration(datModel& o_dat,Vector* Vu_n, Vector* Vu_nm1, Vector* Vu_np1, int numEq)
+{
+	int  startP, endP;
+	startP = ci_rank * numEq / ci_numProce;
+	endP = (ci_rank + 1) * numEq / ci_numProce;
+	double tempA;
+	double dt = o_dat.getTstep();
+	for (int i = startP; i < endP; i++)
+	{
+		tempA = dt * dt * cdp_FGlo[i] / cdp_MGlo[i];
+		Vu_np1->cdp_vecCoeff[i] = Vu_n->cdp_vecCoeff[i] * 2.0 + tempA - Vu_nm1->cdp_vecCoeff[i];
+	}
+	MPI_Bcast(&(Vu_np1->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, ci_rank, MPI_COMM_WORLD);
 }
 
 void pdsolve::assembleElemassMatFEM_CSRformat(datModel& o_dat)
@@ -2845,7 +3132,7 @@ void pdsolve::assembleElemassMatFEM(datModel & o_dat, ofstream & test)
 	}
 }
 
-void pdsolve::setPrescribeVaryDis(datModel & o_dat)
+void pdsolve::setVaryEssentialBC(datModel & o_dat)
 {
 	// displacement increasing boundary condition, for dynamic or quasi-static solver;
 	double dt, Uval;
@@ -2865,6 +3152,23 @@ void pdsolve::setPrescribeVaryDis(datModel & o_dat)
 				Nid = o_dat.op_getEssenBC(i)->cip_NID[j];
 				o_dat.op_getNode(Nid-1)->op_getDof(i_dof)->setValue(Uval);
 			}
+		}
+	}
+}
+
+void pdsolve::setVaryNaturalBC(datModel& o_dat)
+{
+	//  increasing natural boundary condition, for dynamic or quasi-static solver;
+
+	double fval, dt;
+	dt = o_dat.getTstep();
+	int numNBCs = o_dat.getTotnumNaturalBCs();
+	for (int i = 0; i < numNBCs; i++)
+	{
+		if (o_dat.op_getNaturalBC(i)->cb_varing)
+		{
+			fval = o_dat.op_getNaturalBC(i)->cd_value + dt * o_dat.op_getNaturalBC(i)->cd_velocity;
+			o_dat.op_getNaturalBC(i)->cd_value = fval;
 		}
 	}
 }
@@ -2968,6 +3272,7 @@ void pdsolve::pdfemAssembleEquasSys_CSRformat(datModel& o_dat, int numEq)
 		cdp_F[i] = 0;
 		cdp_FGlo[i] = 0;
 	}
+	cb_InteralForce = false;
 	setCSRIndexes_gloStiffMat(o_dat);
 	assembleInterWorkPD_CSRformat(o_dat);
 	assemblePDBEwork_CSRformat(o_dat);
@@ -3277,7 +3582,7 @@ void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 	}
 }
 
-void pdsolve::calResultantForce_CSRformat(datModel& o_dat, int numEq)
+void pdsolve::calinternalForce_CSRformat(datModel& o_dat, int numEq)
 {
 	if (!cdp_F)
 	{
@@ -3292,23 +3597,25 @@ void pdsolve::calResultantForce_CSRformat(datModel& o_dat, int numEq)
 		cdp_F[i] = 0;
 		cdp_FGlo[i] = 0;
 	}
+	cb_InteralForce = true;
 	assembleInterWorkPD_CSRformat(o_dat);
 	assemblePDBEwork_CSRformat(o_dat);
 	assembleSEDbyFEM_CSRformat(o_dat);
-	calExternalForce_CSRformat(o_dat);
-	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	//calExternalForce_CSRformat(o_dat);
+	//MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 }
 
 void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 {
-	//===========static solver to set the start ebc of dynamic solver;
+	////===========static solver to set the start ebc of dynamic solver;
 	//o_dat.ci_solvFlag = 1;
 	//pdfemStaticSolver_CSRformat(o_dat,o_files); // stress calculated;
 	//double maxSig = failureCriterion_stress(o_dat);
-	//double ratio = o_dat.op_getmaterial()->getSigult() / maxSig - 1.0e-10;;
+	//double ratio = o_dat.op_getmaterial()->getSigult() / maxSig*1.2;
 	//double Uval;
 	//int numEBCs, numNODE, i_dof, Nid;
 	//numEBCs = o_dat.getTotnumEssentialBCs();
+	////set start ebc;
 	//for (int i = 0; i < numEBCs; i++)
 	//{
 	//	if (o_dat.op_getEssenBC(i)->cb_varing)
@@ -3324,6 +3631,11 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	//		}
 	//	}
 	//}
+	////static solver for start ebc;
+	//pdfemStaticSolver_CSRformat(o_dat, o_files); // stress calculated;
+	//// updat bond-state
+	//o_dat.ci_solvFlag = 0;
+	//failureCriterion_stress(o_dat);
 	//Don't need block data any more for dynamic solver;
 	o_dat.deleteBLOCK();
 	//================================================================
@@ -3363,20 +3675,30 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	Va_n->setNumRows(numEq);
 	Va_n->setCoeff(dp_A);
 
-	//==========mass matrix CSR format======
-	setCSRIndexes_gloMassMat(o_dat);
-	assembleElemassMatFEM_CSRformat(o_dat);
-	assembleMassMatPD_CSRformat(o_dat);
-	MPI_Allreduce(cdp_M, cdp_MGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-	delete[]cdp_M;
-	cdp_M = NULL;
+	//=====mass===
+	if (o_dat.cb_lumpedMass)
+	{
+		assembleLumpedMass(o_dat, numEq);
+	}
+	else
+	{
+		//==========mass matrix CSR format======
+		setCSRIndexes_gloMassMat(o_dat);
+		assembleElemassMatFEM_CSRformat(o_dat);
+		assembleMassMatPD_CSRformat(o_dat);
+		MPI_Allreduce(cdp_M, cdp_MGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		delete[]cdp_M;
+		cdp_M = NULL;
+	}
+	
 	//===================
 	//===============start dynamic solving==========
+	double dt = o_dat.getTstep();
 	if (ci_rank==0)
 	{
 		printf("start to Dynamic solving......\n");
+		printf("Time step is %e\n", dt);
 	}
-	double dt = o_dat.getTstep();
 	//============get 1th step displacement;
 	//initial Vu_n========
 	int eqIndex;
@@ -3392,22 +3714,34 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 		}
 	}
 	//==set varied prescribed displacemets;
-	setPrescribeVaryDis(o_dat);
+	setVaryEssentialBC(o_dat);
 	//====resultant force;
-	calResultantForce_CSRformat(o_dat, numEq);
+	calinternalForce_CSRformat(o_dat, numEq);
+	calExternalForce_CSRformat(o_dat);
+	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 	//===solve for acceleration
 	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
-	matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
-		cdp_FGlo, dp_A, &comm);
-	MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	if (o_dat.cb_lumpedMass)
+	{
+		for (int i = 0; i < numEq; i++)
+		{
+			dp_A[i] = cdp_FGlo[i] / cdp_MGlo[i];
+		}
+	}
+	else
+	{
+		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
+			cdp_FGlo, dp_A, &comm);
+		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	}
 	//===updat displacement and store;
 	matoperat.matMultiply(Va_n, 0.5 * dt * dt, Vu_np1);
 	matoperat.matAdd(Vu_np1, Vu_n, Vu_np1);
 	storeDisplacementResult(o_dat, Vu_np1);
+	//calculate stress==
+	calGlobalNodeStresses(o_dat);
 	if (o_dat.ci_failFlag==0)
 	{
-		//calculate stress==
-		calGlobalNodeStresses(o_dat);
 		//===updat bond-state==
 		failureCriterion_stress(o_dat);
 	}
@@ -3433,22 +3767,33 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 		}
 
 		//==set varied prescribed displacemets;
-		setPrescribeVaryDis(o_dat);
+		setVaryEssentialBC(o_dat);
 		//====resultant force;
-		calResultantForce_CSRformat(o_dat, numEq);//memory leak;
-		//===solve for acceleration
-		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
-			cdp_FGlo, dp_A, &comm);
-		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		////===updat displacement and store the results;
-		matoperat.matMultiply(Va_n, dt * dt, Vu_np1); // a*t^2;
-		matoperat.matAdd(Vu_np1,2.0, Vu_n, Vu_np1);// 2*U_n+a*t^2;
-		matoperat.matMinus(Vu_np1, Vu_nm1, Vu_np1);//2*U_n+a*t^2-U_(n-1);
+		calinternalForce_CSRformat(o_dat, numEq);
+		calExternalForce_CSRformat(o_dat);
+		MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		//===time integration
+		if (o_dat.cb_lumpedMass)
+		{
+			timeIntegration(o_dat, Vu_n, Vu_nm1, Vu_np1, numEq);
+		}
+		else
+		{
+			//===solve for acceleration
+			matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
+				cdp_FGlo, dp_A, &comm);
+			MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			////===updat displacement and store the results;
+			matoperat.matMultiply(Va_n, dt* dt, Vu_np1); // a*t^2;
+			matoperat.matAdd(Vu_np1, 2.0, Vu_n, Vu_np1);// 2*U_n+a*t^2;
+			matoperat.matMinus(Vu_np1, Vu_nm1, Vu_np1);//2*U_n+a*t^2-U_(n-1);
+		}
+		//==store displacement
 		storeDisplacementResult(o_dat, Vu_np1);
+		//calculate stress==
+		calGlobalNodeStresses(o_dat);
 		if (o_dat.ci_failFlag == 0)
 		{
-			//calculate stress==
-			calGlobalNodeStresses(o_dat);
 			//===updat bond-state==
 			failureCriterion_stress(o_dat);
 		}
@@ -3473,8 +3818,190 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	// release memory;
 	delete Vu_nm1, delete Vu_n, delete Vu_np1, delete Va_n; // no need to delete dp_A, if Va_n is deleted;
 	Vu_nm1 = NULL, Vu_n = NULL, Vu_np1 = NULL, Va_n = NULL;
-	delete[] cip_ia, delete[] cip_ja, delete[] cdp_F, delete[] cdp_FGlo, delete[] cdp_MGlo;
-	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_FGlo = NULL, cdp_MGlo = NULL;
+	delete[] cdp_F, delete[] cdp_FGlo, delete[] cdp_MGlo;
+	cdp_F = NULL, cdp_FGlo = NULL, cdp_MGlo = NULL;
+	if (cip_ia)
+	{
+		delete[] cip_ia, delete[] cip_ja;
+		cip_ia = NULL, cip_ja = NULL;
+	}
+}
+
+void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
+{
+	//Don't need block data any more for dynamic solver;
+	o_dat.deleteBLOCK();
+	//================================================================
+	o_dat.ci_solvFlag = 0;// remove later;
+	if (o_dat.ci_solvFlag != 0)
+	{
+		printf("ERROR: This is not dynamic solver\n");
+		printf("Please reset the solver flag\n");
+		exit(0);
+	}
+	//============number of equations===================
+	int numDime = o_dat.ci_Numdimen;
+	int numPreDof = 0;
+	for (int i = 0; i < o_dat.getTotnumEssentialBCs(); i++)
+	{
+		numPreDof = numPreDof + o_dat.op_getEssenBC(i)->getNumNODE();
+	}
+	int totNumNode;
+	int numEq;
+	totNumNode = o_dat.getTotnumNode();
+	numEq = totNumNode * numDime - numPreDof;
+	long long int numEq_long = numEq;
+	//========================================================================
+	//=============inital some variables=====
+	/*Vu_nm1--Vector: displacement of (n-1)th step;
+	 Vu_n--Vector: displacement of (n)th step;
+	 Vu_np1--Vector: displacement of (n+1)th step;
+	 Va_n--Vector: accerations of (n)th step;*/
+	Vector* Vu_n, * Vu_np1, * Va_n, * Va_np1, * Vv_n, * Vv_np1;
+
+	//=====mass==========
+	if (o_dat.cb_lumpedMass)
+	{
+		assembleLumpedMass(o_dat, numEq);
+	}
+	else
+	{
+		//==========mass matrix CSR format======
+		setCSRIndexes_gloMassMat(o_dat);
+		assembleElemassMatFEM_CSRformat(o_dat);
+		assembleMassMatPD_CSRformat(o_dat);
+		MPI_Allreduce(cdp_M, cdp_MGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		delete[]cdp_M;
+		cdp_M = NULL;
+	}
+
+	//===================
+	//===============start dynamic solving==========
+	double dt = o_dat.getTstep();
+	if (ci_rank == 0)
+	{
+		printf("start to Newmark's Dynamic solving......\n");
+		printf("Time step is %e\n", dt);
+	}
+}
+
+void pdsolve::pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq)
+{
+	o_dat.ci_solvFlag = 2;
+	//initial K matrix
+	for (long long int i = 0; i < cip_ia[numEq]; i++)
+	{
+		cdp_Ku[i] = 0;
+		cdp_KuGlo[i] = 0;
+	}
+	//====internal force;
+	calinternalForce_CSRformat(o_dat, numEq);
+	//==set varied NBC (NBC, not prescribed displacemets); 
+	setVaryNaturalBC(o_dat);
+	//==external force;
+	calExternalForce_CSRformat(o_dat);
+	//assembling equations
+	cb_InteralForce = false;//not for calculate internal force
+	assembleInterWorkPD_CSRformat(o_dat);
+	assemblePDBEwork_CSRformat(o_dat);
+	assembleSEDbyFEM_CSRformat(o_dat);
+	//==all reduce sum;
+	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+}
+
+void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
+{
+	int saveFren = o_dat.getSaveFreq();
+	int numTstep = o_dat.getnumTstep();
+	//============number of equations===================
+	int numDime = o_dat.ci_Numdimen;
+	int numPreDof = 0;
+	for (int i = 0; i < o_dat.getTotnumEssentialBCs(); i++)
+	{
+		numPreDof = numPreDof + o_dat.op_getEssenBC(i)->getNumNODE();
+	}
+	int totNumNode;
+	int numEq;
+	totNumNode = o_dat.getTotnumNode();
+	numEq = totNumNode * numDime - numPreDof;
+	long long int numEq_long = numEq;
+	//=============inital some variables=====
+	Vector* Vdu, * Vu_n;
+	Vu_n = new Vector(numEq);
+	Vdu = new Vector(numEq);
+	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
+	//===============start dynamic solving==========
+	if (ci_rank == 0)
+	{
+		printf("start to quasi-static solving......\n");
+	}
+	//============get initial step displacement;
+	//initial Vu_n========
+	int eqIndex;
+	for (int k = 0; k < totNumNode; k++)
+	{
+		for (int i = 0; i < numDime; i++)
+		{
+			eqIndex = o_dat.op_getNode(k)->op_getDof(i)->i_getEqInde();
+			if (eqIndex != -1)
+			{
+				Vu_n->setCoeff(eqIndex, o_dat.op_getNode(k)->op_getDof(i)->d_getValue());
+			}
+		}
+	}
+	//===set global stiff K as CSR format;
+	setCSRIndexes_gloStiffMat(o_dat);
+	//===start loop=============;
+	for (int n = 1; n < numTstep + 1; n++)
+	{
+		if (ci_rank == 0)
+		{
+			cout << "load step n= " << n << endl;
+		}
+		//assenble Euqation system;
+		pdfemQuasiStaticAssembleEquasSys_CSRformat(o_dat, numEq);
+
+		// solver du;
+		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_KuGlo,
+			cdp_FGlo, Vdu->cdp_vecCoeff, &comm);
+
+		/*store results========;*/
+		MPI_Bcast(Vdu->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+		matoperat.matAdd(Vu_n, Vdu, Vu_n);
+		storeDisplacementResult(o_dat, Vu_n);
+		/*==stresses==========*/
+		calGlobalNodeStresses(o_dat);
+		//===updat bond-state==
+		if (o_dat.ci_failFlag == 0)
+		{
+			failureCriterion_stress(o_dat);
+		}
+		else if (o_dat.ci_failFlag == 1)
+		{
+			failureCriterion_stretch(o_dat);
+		}
+		//==calculta reaction force if needed;
+
+		//write results===
+		if (n % saveFren == 0 || n == numTstep)
+		{
+			calLocalDamage(o_dat);
+			if (ci_rank == 0)
+			{
+				printf("Writing results at step of %d ......\n", n);
+				o_files.writeReslutsTOTAL_vtk(o_dat, n); //**set phi
+			}
+		}
+	}
+	//release memory;
+	delete Vu_n, delete Vdu;
+	Vu_n = NULL, Vdu = NULL;
+	delete[] cip_ia, delete[] cip_ja, delete[] cdp_F, delete[] cdp_FGlo;
+	delete[] cdp_Ku, delete[]cdp_KuGlo;
+	cip_ia = NULL; cip_ja = NULL, cdp_F = NULL, cdp_FGlo = NULL;
+	cdp_Ku = NULL, cdp_KuGlo = NULL;
 }
 
 double pdsolve::failureCriterion_stretch(datModel& o_dat)
@@ -3528,19 +4055,19 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat)
 						(xi[2] + eta[2]) * (xi[2] + eta[2]));
 					s = mag / mag_ref - 1.0;
 
-					if (o_dat.ci_solvFlag == 0)
+					if (o_dat.ci_solvFlag != 1)//non-static solver
 					{
 						delta_m = fac * pow((o_dat.op_getNode(NID_m - 1)->getvolume()), 1.0 / numDime);
 						delta = 0.5 * (delta_k + delta_m);
 						sc = sqrt(5 * G0 / (9 * kappa * delta));
 						if (s >= sc)
 						{
-							temP_fami->setbondstate(m, 0);//only dynamic solver set mu=0;
+							temP_fami->setbondstate(m, 0);//only non-static solver set mu=0;
 							mp_fami[famkk] = 1;
 						}
 
 					}
-					else if (o_dat.ci_solvFlag == 1)
+					else if (o_dat.ci_solvFlag == 1)//static solver
 					{
 						if (s > s_max)
 						{
@@ -3555,7 +4082,7 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat)
 	}
 	//==== sent and receive data;
 	double maxS = 0;
-	if (o_dat.ci_solvFlag == 1)
+	if (o_dat.ci_solvFlag !=1&&numFami>0)//non -static solver
 	{
 		MPI_Allreduce(&(mp_fami[0]), &(mp_fami_glo[0]), numFami, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 		int LocSP, LocEP;
@@ -3574,7 +4101,7 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat)
 			}
 		}
 	}
-	else if (o_dat.ci_solvFlag==1)
+	else if (o_dat.ci_solvFlag==1)//static solver
 	{
 		MPI_Allreduce(&s_max, &maxS, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 	}
@@ -3588,6 +4115,9 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 	numFami = o_dat.getTotnumFami();
 	startP = ci_rank * numFami / ci_numProce;
 	endP = (ci_rank + 1) * numFami / ci_numProce;
+	//startP = 0;
+	//endP = numFami;
+
 	pdFamily* temP_fami;
 	vector<int>mp_fami(numFami);
 	vector<int>mp_fami_glo(numFami);
@@ -3629,7 +4159,7 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 					sigma1 = sqrt(0.5 * ((sig[0] - sig[1]) * (sig[0] - sig[1]) +
 						(sig[0] - sig[2]) * (sig[0] - sig[2]) + (sig[1] - sig[2]) * (sig[1] - sig[2])) +
 						3 * (sig[3] * sig[3] + sig[4] * sig[4] + sig[5] * sig[5]));
-					if (o_dat.ci_solvFlag == 0)
+					if (o_dat.ci_solvFlag !=1)//non-static solver
 					{
 						if (sigma1 > sigult)
 						{
@@ -3637,7 +4167,7 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 							mp_fami[famkk] = 1;
 						}
 					}
-					else if (o_dat.ci_solvFlag == 1)
+					else if (o_dat.ci_solvFlag == 1)//static solver
 					{
 						if (sigma1 > sigma1_max)
 						{
@@ -3651,9 +4181,9 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 		
 	}
 
-	////==== sent and receive data;
+	//==== sent and receive data;
 	double maxSig = 0;
-	if (o_dat.ci_solvFlag==0)
+	if (o_dat.ci_solvFlag!=1&&numFami>0)//non-static solver
 	{
 		MPI_Allreduce(&(mp_fami[0]), &(mp_fami_glo[0]), numFami, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 		int LocSP, LocEP;
@@ -3672,13 +4202,65 @@ double pdsolve::failureCriterion_stress(datModel& o_dat)
 			}
 		}
 	}
-	else if (o_dat.ci_solvFlag==1)
+	else if (o_dat.ci_solvFlag==1)//static solver;
 	{
 		MPI_Allreduce(&sigma1_max, &maxSig, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 	}
 	/*delete sigma_kg, delete simga_priaxis, delete sigma_pri;
 	sigma_kg = NULL, simga_priaxis = NULL, sigma_pri = NULL;*/
 	return maxSig;
+	//return sigma1_max;
+}
+
+double pdsolve::failureCriterion_stressCut(datModel& o_dat)
+{
+	int numFami, startP, endP;
+	numFami = o_dat.getTotnumFami();
+	startP = ci_rank * numFami / ci_numProce;
+	endP = (ci_rank + 1) * numFami / ci_numProce;
+	pdFamily* temP_fami;
+	vector<int>mp_fami(numFami);
+	vector<int>mp_fami_glo(numFami);
+	int numNodeOfFami, NID_k, NID_m;
+	double sig[6], sigma_k[6], sigma_m[6], sigma1, sigult, sigma1_max = 0, mu_km;
+	sigult = o_dat.op_getmaterial()->getSigult();
+	Matrix* sigma_kg = new Matrix(3, 3);
+	Matrix* simga_priaxis = new Matrix(3, 3);// dummy here.
+	Vector* sigma_pri = new Vector(3);
+	int maxIDX;
+	double eigV[3];
+	for (int famkk = startP; famkk < endP; famkk++)
+	{
+		temP_fami = o_dat.op_getFami(famkk);
+		if (temP_fami->cb_allowFail)
+		{
+			numNodeOfFami = temP_fami->getNumNode();
+			NID_k = temP_fami->getNodeID(0);
+			o_dat.op_getNode(NID_k - 1)->getStress(sigma_k);
+			for (int m = 1; m < numNodeOfFami; m++)
+			{
+				mu_km = temP_fami->getbondstate(m);
+				o_dat.op_getNode(NID_m - 1)->getStress(sigma_m);
+				// symmetry matrix, store by upper triangle
+				for (int ii = 0; ii < 3; ii++)
+				{
+					sigma_kg->setCoeff(ii, ii, 0.5 * (sigma_k[ii] + sigma_m[ii]));
+				}
+				sigma_kg->setCoeff(0, 1, 0.5 * (sigma_k[3] + sigma_m[3]));
+				sigma_kg->setCoeff(0, 2, 0.5 * (sigma_k[5] + sigma_m[5]));
+				sigma_kg->setCoeff(1, 2, 0.5 * (sigma_k[4] + sigma_m[4]));
+				matoperat.dSymeEigenV('V', sigma_kg, sigma_pri, simga_priaxis);
+				sigma1 = *max_element(sigma_pri->cdp_vecCoeff, sigma_pri->cdp_vecCoeff + 3);
+				maxIDX = max_element(sigma_pri->cdp_vecCoeff, sigma_pri->cdp_vecCoeff + 3)- sigma_pri->cdp_vecCoeff;
+				for (int ii = 0; ii < 3; ii++)
+				{
+					eigV[ii] = simga_priaxis->d_getCoeff(ii, maxIDX);
+				}
+			}
+		}
+	}
+
+	return 0.0;
 }
 
 void pdsolve::calLocalDamage(datModel& o_dat)
@@ -3701,9 +4283,12 @@ void pdsolve::calLocalDamage(datModel& o_dat)
 		{
 			tempDam = tempDam + temP_fami->getbondstate(m);
 		}
-		locaDama[famkk] = 1.0 - tempDam / numNodeOfFami;
+		locaDama[famkk] = 1.0 - tempDam / (numNodeOfFami-1.0);
 	}
-	MPI_Reduce(&(locaDama[0]), &(glo_locaDama[0]), numFami, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	if (numFami>0)
+	{
+		MPI_Reduce(&(locaDama[0]), &(glo_locaDama[0]), numFami, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	}
 	if (ci_rank==0)
 	{
 		int NID_k;

@@ -48,7 +48,9 @@ public:
 	void matC2D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
 	//functions for 3D====
 	void shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
+	void shapTens3D3rd(Matrix* A, pdFamily* p_fami, datModel& o_dat);
 	void vec_gd3D(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
+	void vec_gd3D3rd(double g[], double d[], Matrix* A, pdFamily* p_fami, double xi[], datModel& o_dat);
 	void matG3D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
 	void matH3D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
 	void matC3D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
@@ -58,6 +60,7 @@ public:
 	void assembleInterWorkPD(datModel& o_dat);
 	void assemblePDBEwork(datModel& o_dat);
 	void assembleMassMatPD(datModel& o_dat); //PD node mass;
+	void assembleLumpedMass(datModel& o_dat,int numEqua);
 	//====CSR format===
 	void assembleInterWorkPD_CSRformat(datModel& o_dat);
 	void assemblePDBEwork_CSRformat(datModel& o_dat);
@@ -77,6 +80,7 @@ public:
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
 	//===========Solvers================================
 	void pdfemSolver(datModel& o_dat, fioFiles& o_files);
+	void calinternalForce_CSRformat(datModel& o_dat, int numEq);
 	//===================================
 	//====static solver==================
 	//===================================
@@ -91,18 +95,28 @@ public:
 	//===dynamical solver================
 	//===================================
 	//==CSR format
+	void calAcceleration(int numEq, double* dp_A);
+	void timeIntegration(datModel& o_dat,Vector * Vu_n,Vector* Vu_nm1,Vector* Vu_np1,int numEq);
 	void assembleElemassMatFEM_CSRformat(datModel& o_dat);//CSR ---element mass ;
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
-	void calResultantForce_CSRformat(datModel& o_dat, int numEq);
 	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files);
+	void pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
+	//===================================
+	//===quasi-static solver================
+	//===================================
+	//==CSR format
+	void pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq);
+	void pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
+
 	//==failure criterion
 	double failureCriterion_stretch(datModel& o_dat);
 	double failureCriterion_stress(datModel& o_dat);
+	double failureCriterion_stressCut(datModel& o_dat);
 	void calLocalDamage(datModel& o_dat);
 	//==vary ebc;
-	void setPrescribeVaryDis(datModel&o_dat);
-
+	void setVaryEssentialBC(datModel&o_dat);
+	void setVaryNaturalBC(datModel& o_dat);
 	void set_step_DispBC_qusia_static(datModel& o_dat);
 	void resetDispBC(datModel& o_dat, double Multip);
 
@@ -150,9 +164,10 @@ private:
 	//int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	//// PD node on the interface, interact with node in fem domain or not
 	//int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	bool cb_InteralForce;
 	////=============END flags=========================
 	//============================================
-
+	
 	//==material constants;
 	Matrix* cop_D;
 	double cd_lambda;

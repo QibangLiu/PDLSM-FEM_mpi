@@ -9,8 +9,9 @@ pdfemNaturalBCs::pdfemNaturalBCs(int numEle, double val)
 	//8--2D--8Nodes;
 	//==================
 	ci_numEle = numEle;
-	cd_valule = val;
+	cd_value = val;
 	cop2_NBCsEle = new pdfemEles * [numEle];
+	cb_varing = false;
 	//cip2_nbcNID = new int* [numEle];
 	//ci_numNodeOfEle = numNode;
 	//cip_nbcNormDire = new int[numEle];
@@ -35,7 +36,7 @@ int pdfemNaturalBCs::getNumEle()
 
 double pdfemNaturalBCs::getValue()
 {
-	return cd_valule;
+	return cd_value;
 }
 
 pdfemEles* pdfemNaturalBCs::op_getNBCsEle(int ele)

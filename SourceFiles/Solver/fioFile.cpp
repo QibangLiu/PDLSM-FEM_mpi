@@ -92,13 +92,13 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 				}
 				else
 				{
-					o_dat.cd_dtf = atof(tokens[1].c_str());
+					o_dat.cd_dt = atof(tokens[1].c_str());
 					o_dat.ci_numTstep= atoi(tokens[2].c_str());
 					o_dat.ci_savefrequence= atoi(tokens[3].c_str());
 					o_dat.op_getGeomP()->cd_factor= atof(tokens[4].c_str());
 				}
 			}
-			else if (tokens[0] == "VEBC")
+			else if (tokens[0] == "VEBC")// essential bc
 			{
 				if (tokens.size() < 3)
 				{
@@ -116,6 +116,26 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 					velo= atof(tokens[2].c_str());
 					o_dat.op_getEssenBC(ID)->cb_varing = true;
 					o_dat.op_getEssenBC(ID)->cd_velocity = velo;
+				}
+			}
+			else if (tokens[0] == "VNBC")// natural bc
+			{
+				if (tokens.size() < 3)
+				{
+					if (ci_rank == 0)
+					{
+						printf("Miss VNBC CMD. \n");
+						exit(0);
+					}
+				}
+				else
+				{
+					int ID;
+					double velo;
+					ID = atoi(tokens[1].c_str());
+					velo = atof(tokens[2].c_str());
+					o_dat.op_getNaturalBC(ID)->cb_varing = true;
+					o_dat.op_getNaturalBC(ID)->cd_velocity = velo;
 				}
 			}
 			else

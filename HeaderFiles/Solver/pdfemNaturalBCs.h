@@ -18,10 +18,12 @@ public:
 
 	//int** cip2_nbcNID;
 	//int* cip_nbcNormDire;
+	double cd_value;
+	bool cb_varing;
+	double cd_velocity;
 private:
 	pdfemNaturalBCs();
 	pdfemEles** cop2_NBCsEle;
 	int ci_numEle;
-	double cd_valule;
 };
 
