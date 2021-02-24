@@ -16,6 +16,8 @@ datModel::datModel()
 	ci_failFlag = 1;//0-stress,1-stretch
 	cb_lumpedMass = false;
 	ci_TESflag = 2;
+	//==
+	cb_Newmark = true;
 }
 
 datModel::~datModel()

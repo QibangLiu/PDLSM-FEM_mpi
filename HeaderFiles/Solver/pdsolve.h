@@ -62,10 +62,10 @@ public:
 	void assembleMassMatPD(datModel& o_dat); //PD node mass;
 	void assembleLumpedMass(datModel& o_dat,int numEqua);
 	//====CSR format===
-	void assembleInterWorkPD_CSRformat(datModel& o_dat);
-	void assemblePDBEwork_CSRformat(datModel& o_dat);
-	void assemblePDBEworkQuad_CSRformat(datModel& o_dat);
-	void assemblePDBEworkTetrahe_CSRformat(datModel& o_dat);
+	void assembleInterWorkPD_CSRformat(datModel& o_dat,double *U_N);
+	void assemblePDBEwork_CSRformat(datModel& o_dat, double* U_N);
+	void assemblePDBEworkQuad_CSRformat(datModel& o_dat, double* U_N);
+	void assemblePDBEworkTetrahe_CSRformat(datModel& o_dat, double* U_N);
 	void assembleMassMatPD_CSRformat(datModel& o_dat); //PD node mass;
 	//=======================================================================
 	//========================FEM algorithem=================================
@@ -76,11 +76,11 @@ public:
 	void assembleSEDbyFEM(datModel&o_dat);  // assemble strain energy density by fem ;
 	void assembleElemassMatFEM(datModel&o_dat, ofstream&test); // assemble element mass ;
 	void calExternalForce(datModel& o_dat); // calcule equivalent extern nodal force;
-	void assembleSEDbyFEM_CSRformat(datModel& o_dat);//CSR ---assemble strain energy density by fem ;
+	void assembleSEDbyFEM_CSRformat(datModel& o_dat, double* U_N);//CSR ---assemble strain energy density by fem ;
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
 	//===========Solvers================================
 	void pdfemSolver(datModel& o_dat, fioFiles& o_files);
-	void calinternalForce_CSRformat(datModel& o_dat, int numEq);
+	void calinternalForce_CSRformat(datModel& o_dat, int numEq, double* U_N);
 	//===================================
 	//====static solver==================
 	//===================================
@@ -101,7 +101,12 @@ public:
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
 	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files);
+	//===Newmark's method
 	void pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
+	void pdfemAssembleKN_CSRformat(datModel& o_dat, int numEq, int n);
+	void pdfemAssembleKNFR_CSRformat(datModel& o_dat, int numEq, Vector* a_n, Vector* V_n,double *U_N, int n);
+	void updateDispVelo(Vector* Vu_n, Vector* Vv_n, Vector* Va_n, Vector* Va_np1, int numEq, datModel& o_dat);
+	void printArr(double* V, int numEq, ofstream& fout);
 	//===================================
 	//===quasi-static solver================
 	//===================================
@@ -167,7 +172,7 @@ private:
 	bool cb_InteralForce;
 	////=============END flags=========================
 	//============================================
-	
+	double cd_beta, cd_gamma;
 	//==material constants;
 	Matrix* cop_D;
 	double cd_lambda;

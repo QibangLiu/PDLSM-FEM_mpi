@@ -13,8 +13,10 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_Ku = NULL, cdp_Ug = NULL, cdp_M = NULL;
 	cdp_FGlo = NULL, cdp_KuGlo = NULL;
 	cb_InteralForce = false;
+	//initial parameters for Newmark's method
+	cd_gamma = 0.75;
+	cd_beta = 0.5;
 	//===set data model ==================================
-	
 	setDatModel(o_dat);
 	//============================D matrix=================
 	int prob_type = o_dat.getProType();
@@ -1572,7 +1574,7 @@ void pdsolve::assembleInterWorkPD(datModel & o_dat)
 	}
 }
 
-void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
+void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat, double* U_N)
 {
 	// assemble H============= ;
 	int numDime = o_dat.ci_Numdimen;
@@ -1628,8 +1630,25 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 							else
 							{
 								// dynamic solver;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+								}
+								else
+								{
+									//New mark method
+									//Residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+									//for KN
+									eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqindex_col != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqindex_row, eqindex_col);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+								}
 							}
 							
 						}
@@ -1688,8 +1707,25 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat)
 							else
 							{
 								// dynamic solver;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+								}
+								else
+								{
+									//newmark method
+									//for residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqindex_row] = cdp_F[eqindex_row] - temp * tempu;
+									//for KN
+									eqindex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqindex_col != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqindex_row, eqindex_col);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+								}
 							}
 						}
 					}
@@ -2094,7 +2130,7 @@ void pdsolve::assemblePDBEwork(datModel & o_dat)
 	}
 }
 
-void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
+void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 {
 
 	int numPDBEs, startP, endP;
@@ -2164,7 +2200,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
 									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
 								}
-								else
+								else 
 								{
 									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
 									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
@@ -2173,8 +2209,26 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 							else
 							{
 								//dynamic solver;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								}
+								else
+								{
+									//Newmark method
+									//for residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+									//for KN
+									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqIndex_col[j] != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+								}
+								
 							}
 							
 						}
@@ -2211,8 +2265,26 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 							}
 							else
 							{
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								}
+								else
+								{
+									//Newmark method
+									//for residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+									//for KN
+									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqIndex_col[j] != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+
+								}
 							}
 							
 						}
@@ -2263,8 +2335,29 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 							else
 							{
 								//dynamic solver;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								}
+								else
+								{
+									//Newmark method
+									//for residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+									//for KN
+									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqIndex_col[j] != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+
+									
+								}
+								/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
 							}
 							
 						}
@@ -2302,8 +2395,29 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 							else
 							{
 								// dynamic solver;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+								}
+								else
+								{
+									//Newmark method
+									//for residule force
+									tempu = U_N[(NID_m - 1) * numDime + j];
+									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+									//for KN
+									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+									if (eqIndex_col[j] != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+
+									
+								}
+								/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
 							}
 						}
 					}
@@ -2320,11 +2434,11 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 	{
 		if (o_dat.ci_eleType==12)
 		{
-			assemblePDBEworkQuad_CSRformat(o_dat);
+			assemblePDBEworkQuad_CSRformat(o_dat,U_N);
 		}
 		else if (o_dat.ci_eleType==10)
 		{
-			assemblePDBEworkTetrahe_CSRformat(o_dat);
+			assemblePDBEworkTetrahe_CSRformat(o_dat, U_N);
 		}
 		else
 		{
@@ -2334,7 +2448,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat)
 	}
 }
 
-void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
+void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat, double* U_N)
 {
 	int numPDBEs, startP, endP;
 	numPDBEs = o_dat.getTotnumPDBEs();
@@ -2425,8 +2539,26 @@ void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
 										else
 										{
 											//dynamic solver
-											tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
-											cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+											if (!o_dat.cb_Newmark)
+											{
+												tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+												cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+											}
+											else
+											{
+												//Newmark method
+												//tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+												// for residule force
+												tempu = U_N[(NID_m - 1) * numDime + jj];
+												cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+												//for KN
+												eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+												if (eqIndex_col != -1)
+												{
+													i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+													cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+												}
+											}
 										}
 
 									}
@@ -2447,7 +2579,7 @@ void pdsolve::assemblePDBEworkQuad_CSRformat(datModel& o_dat)
 	
 }
 
-void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
+void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat, double* U_N)
 {
 	int numPDBEs, startP, endP;
 	numPDBEs = o_dat.getTotnumPDBEs();
@@ -2524,8 +2656,26 @@ void pdsolve::assemblePDBEworkTetrahe_CSRformat(datModel& o_dat)
 								else
 								{
 									//dynamic solver
-									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
-									cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+									if (!o_dat.cb_Newmark)
+									{
+										tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+										cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+									}
+									else
+									{
+										//Newmark method;
+										//tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+										//for residule force;
+										tempu = U_N[(NID_m - 1) * numDime + jj];
+										cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+										//for KN
+										eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+										if (eqIndex_col != -1)
+										{
+											i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+											cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+										}
+									}
 								}
 
 							}
@@ -2825,7 +2975,7 @@ void pdsolve::assembleSEDbyFEM(datModel & o_dat)
 	}
 }
 
-void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
+void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat, double* U_N)
 {
 	// By traditional FEM
 		
@@ -2894,8 +3044,27 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat)
 								else
 								{
 									//dynamic solver;
-									tempu = o_dat.op_getNode(NID_j - 1)->op_getDof(jj)->d_getValue();
-									cdp_F[eqInde_i] = cdp_F[eqInde_i] - temp * tempu;
+									if (!o_dat.cb_Newmark)
+									{
+										tempu = o_dat.op_getNode(NID_j - 1)->op_getDof(jj)->d_getValue();
+										cdp_F[eqInde_i] = cdp_F[eqInde_i] - temp * tempu;
+									}
+									else
+									{
+										// if is newmark's method;
+										//tempu = o_dat.op_getNode(NID_j - 1)->op_getDof(jj)->d_getValue();
+										//===internal force
+										tempu = U_N[(NID_j - 1) * numDime + jj];
+										cdp_F[eqInde_i] = cdp_F[eqInde_i] - temp * tempu;
+										//===KN=================
+										eqInde_j = o_dat.op_getNode(NID_j - 1)->op_getDof(jj)->i_getEqInde();
+										if (eqInde_j != -1)
+										{
+											i_temp = findCSRIndexOfMat(eqInde_i, eqInde_j);
+											cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+										}
+
+									}
 								}
 								
 							}
@@ -2986,7 +3155,15 @@ void pdsolve::pdfemSolver(datModel& o_dat, fioFiles& o_files)
 	else if (o_dat.ci_solvFlag==0)
 	{
 		//dynamic solver;
-		pdfemDynamicSolver_CSRformat(o_dat, o_files);
+		if (o_dat.cb_Newmark)
+		{
+			pdfemDynamicNewmarkSolver_CSRformat(o_dat, o_files);
+		}
+		else
+		{
+			pdfemDynamicSolver_CSRformat(o_dat, o_files);
+		}
+		
 	}
 	else if (o_dat.ci_solvFlag == 2)
 	{
@@ -3273,10 +3450,11 @@ void pdsolve::pdfemAssembleEquasSys_CSRformat(datModel& o_dat, int numEq)
 		cdp_FGlo[i] = 0;
 	}
 	cb_InteralForce = false;
+	unique_ptr<double[]> U_N = make_unique<double[]>(1);
 	setCSRIndexes_gloStiffMat(o_dat);
-	assembleInterWorkPD_CSRformat(o_dat);
-	assemblePDBEwork_CSRformat(o_dat);
-	assembleSEDbyFEM_CSRformat(o_dat);
+	assembleInterWorkPD_CSRformat(o_dat,U_N.get());
+	assemblePDBEwork_CSRformat(o_dat, U_N.get());
+	assembleSEDbyFEM_CSRformat(o_dat, U_N.get());
 	calExternalForce_CSRformat(o_dat);
 	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -3582,7 +3760,7 @@ void pdsolve::setCSRIndexes_gloMassMat(datModel& o_dat)
 	}
 }
 
-void pdsolve::calinternalForce_CSRformat(datModel& o_dat, int numEq)
+void pdsolve::calinternalForce_CSRformat(datModel& o_dat, int numEq,double *U_N)
 {
 	if (!cdp_F)
 	{
@@ -3598,9 +3776,9 @@ void pdsolve::calinternalForce_CSRformat(datModel& o_dat, int numEq)
 		cdp_FGlo[i] = 0;
 	}
 	cb_InteralForce = true;
-	assembleInterWorkPD_CSRformat(o_dat);
-	assemblePDBEwork_CSRformat(o_dat);
-	assembleSEDbyFEM_CSRformat(o_dat);
+	assembleInterWorkPD_CSRformat(o_dat, U_N);
+	assemblePDBEwork_CSRformat(o_dat, U_N);
+	assembleSEDbyFEM_CSRformat(o_dat, U_N);
 	//calExternalForce_CSRformat(o_dat);
 	//MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 }
@@ -3716,7 +3894,8 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	//==set varied prescribed displacemets;
 	setVaryEssentialBC(o_dat);
 	//====resultant force;
-	calinternalForce_CSRformat(o_dat, numEq);
+	unique_ptr<double[]> U_N = make_unique<double[]>(1);
+	calinternalForce_CSRformat(o_dat, numEq, U_N.get());
 	calExternalForce_CSRformat(o_dat);
 	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 	//===solve for acceleration
@@ -3769,7 +3948,7 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 		//==set varied prescribed displacemets;
 		setVaryEssentialBC(o_dat);
 		//====resultant force;
-		calinternalForce_CSRformat(o_dat, numEq);
+		calinternalForce_CSRformat(o_dat, numEq, U_N.get());
 		calExternalForce_CSRformat(o_dat);
 		MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 		//===time integration
@@ -3829,10 +4008,42 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 
 void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 {
+	////===========static solver to set the start ebc of dynamic solver;
+	//o_dat.ci_solvFlag = 1;
+	//pdfemStaticSolver_CSRformat(o_dat,o_files); // stress calculated;
+	//double maxSig = failureCriterion_stress(o_dat);
+	//double ratio = o_dat.op_getmaterial()->getSigult() / maxSig;
+	//double Uval;
+	//int numEBCs, numNODE, i_dof, Nid;
+	//numEBCs = o_dat.getTotnumEssentialBCs();
+	////set start ebc;
+	//for (int i = 0; i < numEBCs; i++)
+	//{
+	//	if (o_dat.op_getEssenBC(i)->cb_varing)
+	//	{
+	//		Uval = o_dat.op_getEssenBC(i)->cd_value * ratio;
+	//		o_dat.op_getEssenBC(i)->cd_value = Uval;
+	//		numNODE = o_dat.op_getEssenBC(i)->getNumNODE();
+	//		i_dof = o_dat.op_getEssenBC(i)->getDOF();
+	//		for (int j = 0; j < numNODE; j++)
+	//		{
+	//			Nid = o_dat.op_getEssenBC(i)->cip_NID[j];
+	//			o_dat.op_getNode(Nid - 1)->op_getDof(i_dof)->setValue(Uval);
+	//		}
+	//	}
+	//}
+	////static solver for start ebc;
+	//pdfemStaticSolver_CSRformat(o_dat, o_files); // stress calculated;
+	//// updat bond-state
+	//o_dat.ci_solvFlag = 0;
+	////failureCriterion_stress(o_dat);//??????????need here???
+	///*=======================================================================*/
+
+
 	//Don't need block data any more for dynamic solver;
 	o_dat.deleteBLOCK();
 	//================================================================
-	o_dat.ci_solvFlag = 0;// remove later;
+	o_dat.ci_solvFlag = 0;// dynamic solver; may remove later;
 	if (o_dat.ci_solvFlag != 0)
 	{
 		printf("ERROR: This is not dynamic solver\n");
@@ -3857,25 +4068,34 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 	 Vu_n--Vector: displacement of (n)th step;
 	 Vu_np1--Vector: displacement of (n+1)th step;
 	 Va_n--Vector: accerations of (n)th step;*/
-	Vector* Vu_n, * Vu_np1, * Va_n, * Va_np1, * Vv_n, * Vv_np1;
-
-	//=====mass==========
-	if (o_dat.cb_lumpedMass)
+	int saveFren = o_dat.getSaveFreq();
+	int numTstep = o_dat.getnumTstep();
+	double* dp_A = new double[numEq];// accerations, Va_np1 point to this pointer;
+	Vector* Vu_n, * Va_n, * Va_np1, * Vv_n;
+	unique_ptr<double[]>U_N = make_unique<double[]>(o_dat.getTotnumNode() * o_dat.ci_Numdimen);
+	Vu_n = new Vector(numEq);
+	Va_n = new Vector(numEq);
+	Va_np1 = new Vector();
+	Va_np1->setNumRows(numEq);
+	Va_np1->setCoeff(dp_A);
+	Vv_n = new Vector(numEq);
+	//=================initialize 0th step========
+	//============get 0th step displacement;
+	//initial Vu_n========
+	int eqIndex;
+	for (int k = 0; k < totNumNode; k++)
 	{
-		assembleLumpedMass(o_dat, numEq);
+		for (int i = 0; i < numDime; i++)
+		{
+			eqIndex = o_dat.op_getNode(k)->op_getDof(i)->i_getEqInde();
+			if (eqIndex != -1)
+			{
+				Vu_n->setCoeff(eqIndex, o_dat.op_getNode(k)->op_getDof(i)->d_getValue());
+			}
+		}
 	}
-	else
-	{
-		//==========mass matrix CSR format======
-		setCSRIndexes_gloMassMat(o_dat);
-		assembleElemassMatFEM_CSRformat(o_dat);
-		assembleMassMatPD_CSRformat(o_dat);
-		MPI_Allreduce(cdp_M, cdp_MGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-		delete[]cdp_M;
-		cdp_M = NULL;
-	}
-
-	//===================
+	Vv_n->zero();
+	Va_n->zero();
 	//===============start dynamic solving==========
 	double dt = o_dat.getTstep();
 	if (ci_rank == 0)
@@ -3883,7 +4103,214 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 		printf("start to Newmark's Dynamic solving......\n");
 		printf("Time step is %e\n", dt);
 	}
+	//===start loop=============;
+	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
+	
+	for (int n = 0; n < numTstep; n++)
+	{
+		/*ofstream f1("F.out");
+		ofstream k1("K.out");
+		ofstream a1("A.out");
+		ofstream u1("U.out");*/
+		if (ci_rank == 0)
+		{
+			cout << "time step n= " << n << endl;
+		}
+		
+		//==============get a_np1==========
+		//get K_N;
+		//pdfemAssembleKN_CSRformat( o_dat, numEq, n);
+		//get Residual force, and Residule force;
+		pdfemAssembleKNFR_CSRformat(o_dat, numEq, Va_n, Vv_n, U_N.get(),n);
+	/*	printArr(cdp_KuGlo, cip_ia[numEq], k1);
+		printArr(cdp_FGlo, numEq, f1);
+		k1.close(); f1.close();*/
+		//===solve for acceleration a_np1
+		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_KuGlo,
+			cdp_FGlo, dp_A, &comm);
+		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+		/*Va_np1->print(a1);
+		a1.close();*/
+		//===update displacement and store;
+		updateDispVelo(Vu_n, Vv_n, Va_n, Va_np1, numEq, o_dat);
+		/*Vu_n->print(u1);
+		u1.close();*/
+		storeDisplacementResult(o_dat, Vu_n);
+		//==set varied prescribed displacemets;
+		setVaryEssentialBC(o_dat);
+		//update acceleration for next step;
+		double* tempPointer = Va_n->cdp_vecCoeff;
+		Va_n->cdp_vecCoeff= Va_np1->cdp_vecCoeff;
+		Va_np1->cdp_vecCoeff = tempPointer;
+		//calculate stress====
+		calGlobalNodeStresses(o_dat);
+		//updat bond-state===
+		if (o_dat.ci_failFlag == 0)
+		{
+			//===updat bond-state==
+			failureCriterion_stress(o_dat);
+		}
+		else if (o_dat.ci_failFlag == 1)
+		{
+			failureCriterion_stretch(o_dat);
+		}
+		//==calculta reaction force if needed;
+		/***********************/
+		//write results===
+		if (n % saveFren == 0 || n == numTstep)
+		{
+			calLocalDamage(o_dat);
+			if (ci_rank == 0)
+			{
+				printf("Writing results at step of %d ......\n", n);
+				o_files.writeReslutsTOTAL_vtk(o_dat, n); //**set phi
+			}
+		}
+	}
+	// release memory;
+	delete Vu_n, delete Va_np1, delete Va_n, delete Vv_n; // no need to delete dp_A, if Va_n is deleted;
+	Vu_n=NULL,  Va_np1=NULL,  Va_n=NULL,  Vv_n=NULL;
+	delete[]cdp_M, delete[]cdp_Ku, delete[]cdp_KuGlo;
+	delete[] cdp_F, delete[] cdp_FGlo;
+	cdp_MGlo = NULL, cdp_Ku = NULL; cdp_KuGlo = NULL;
+	cdp_F = NULL, cdp_FGlo = NULL; 
+	if (cip_ia)
+	{
+		delete[] cip_ia, delete[] cip_ja;
+		cip_ia = NULL, cip_ja = NULL;
+	}
 }
+
+void pdsolve::pdfemAssembleKN_CSRformat(datModel& o_dat, int numEq,int n)
+{
+	if (n==0)
+	{
+		setCSRIndexes_gloStiffMat(o_dat);
+		//===initializa cdp_M;
+		cdp_M = new double[cip_ia[numEq]];//*****don't foget to release as well as cdp_KU
+		for (long long int i = 0; i < cip_ia[numEq]; i++)
+		{
+			cdp_M[i] = 0;
+		}
+		assembleElemassMatFEM_CSRformat(o_dat);
+		assembleMassMatPD_CSRformat(o_dat);
+	}
+	//===assemble K====
+	for (long long int i = 0; i < cip_ia[numEq]; i++)
+	{
+		cdp_Ku[i] = 0;
+		cdp_KuGlo[i] = 0;
+	}
+	cb_InteralForce = false;
+	double dt =o_dat.cd_dt;
+	unique_ptr<double[]> U_N = make_unique<double[]>(1);
+	assembleInterWorkPD_CSRformat(o_dat, U_N.get()); 
+	assemblePDBEwork_CSRformat(o_dat, U_N.get());
+	assembleSEDbyFEM_CSRformat(o_dat, U_N.get());
+	//==============add M====
+	for (long long int i = 0; i < cip_ia[numEq]; i++)
+	{
+		cdp_Ku[i] = cdp_Ku[i]*cd_beta*dt*dt+cdp_M[i];
+	}
+	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+}
+
+void pdsolve::pdfemAssembleKNFR_CSRformat(datModel& o_dat, int numEq, Vector* a_n, Vector* V_n,double *U_N,int n)
+{
+	//===get U_N====================================
+	int numDime = o_dat.ci_Numdimen;
+	int eqIdx;
+	double dt = o_dat.cd_dt;
+	for (int i = 0; i < o_dat.getTotnumNode(); i++)
+	{
+		for (int j = 0; j < numDime; j++)
+		{
+			eqIdx = o_dat.op_getNode(i)->op_getDof(j)->i_getEqInde();
+			if (eqIdx!=-1)
+			{
+				U_N[i * numDime + j] = o_dat.op_getNode(i)->op_getDof(j)->d_getValue() +
+					dt * V_n->d_getCoeff(eqIdx) + dt * dt * (0.5 - cd_beta) * a_n->d_getCoeff(eqIdx);
+			}
+			else
+			{
+				U_N[i * numDime + j] = o_dat.op_getNode(i)->op_getDof(j)->d_getValue();
+			}
+		}
+	}
+	//===varing ebc=============================================;
+	int numEBCs, numNODE, i_dof, Nid;
+	numEBCs = o_dat.getTotnumEssentialBCs();
+	double dU;
+	for (int i = 0; i < numEBCs; i++)
+	{
+		if (o_dat.op_getEssenBC(i)->cb_varing)
+		{
+			dU = dt * o_dat.op_getEssenBC(i)->cd_velocity;
+			numNODE = o_dat.op_getEssenBC(i)->getNumNODE();
+			i_dof = o_dat.op_getEssenBC(i)->getDOF();
+			for (int j = 0; j < numNODE; j++)
+			{
+				Nid = o_dat.op_getEssenBC(i)->cip_NID[j];
+				U_N[(Nid - 1) * numDime + i_dof] = U_N[(Nid - 1) * numDime + i_dof] + dU;
+			}
+		}
+	}
+	//=================get M, and allocate memory for cdp_Ku,cdp_Kuglo, only call it for the 1st step;
+	if (n == 0)
+	{
+		setCSRIndexes_gloStiffMat(o_dat);
+		//===initializa cdp_M;
+		cdp_M = new double[cip_ia[numEq]];//*****don't foget to release as well as cdp_KU
+		for (long long int i = 0; i < cip_ia[numEq]; i++)
+		{
+			cdp_M[i] = 0;
+		}
+		assembleElemassMatFEM_CSRformat(o_dat);
+		assembleMassMatPD_CSRformat(o_dat);
+	}
+	for (long long int i = 0; i < cip_ia[numEq]; i++)
+	{
+		cdp_Ku[i] = 0;
+		cdp_KuGlo[i] = 0;
+	}
+	//===============get internalforce and KN ===========================
+	cb_InteralForce = true;
+	calinternalForce_CSRformat(o_dat, numEq, U_N);// This function also get part of KN in newmark's method;
+	//may need set varing nbc pbc;
+	calExternalForce_CSRformat(o_dat);
+	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	//==============add M==========
+	for (long long int i = 0; i < cip_ia[numEq]; i++)
+	{
+		cdp_Ku[i] = cdp_Ku[i] * cd_beta * dt * dt + cdp_M[i];
+	}
+	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+}
+
+void pdsolve::updateDispVelo(Vector* Vu_n, Vector* Vv_n, Vector* Va_n, Vector* Va_np1, int numEq, datModel& o_dat)
+{
+	double temp1, dt, temp2;
+	dt = o_dat.cd_dt;
+	for (int i = 0; i < numEq; i++)
+	{
+		temp1 = Vu_n->d_getCoeff(i) + dt * Vv_n->d_getCoeff(i) +
+			dt * dt * ((0.5 - cd_beta) * Va_n->d_getCoeff(i) + cd_beta * Va_np1->d_getCoeff(i));
+		temp2 = Vv_n->d_getCoeff(i) + dt * ((1 - cd_gamma) * Va_n->d_getCoeff(i) + cd_gamma * Va_np1->d_getCoeff(i));
+		Vu_n->setCoeff(i, temp1);//update displacement;
+		Vv_n->setCoeff(i, temp2);//update velocity;
+	}
+}
+
+void pdsolve::printArr(double* V, int numEq, ofstream& fout)
+{
+	fout << "numEq " << numEq << endl;
+	for (int i = 0; i < numEq; i++)
+	{
+		fout << V[i] << endl;
+	}
+}
+
 
 void pdsolve::pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq)
 {
@@ -3895,16 +4322,17 @@ void pdsolve::pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int nu
 		cdp_KuGlo[i] = 0;
 	}
 	//====internal force;
-	calinternalForce_CSRformat(o_dat, numEq);
+	unique_ptr<double[]> U_N = make_unique<double[]>(1);
+	calinternalForce_CSRformat(o_dat, numEq, U_N.get());
 	//==set varied NBC (NBC, not prescribed displacemets); 
 	setVaryNaturalBC(o_dat);
 	//==external force;
 	calExternalForce_CSRformat(o_dat);
 	//assembling equations
 	cb_InteralForce = false;//not for calculate internal force
-	assembleInterWorkPD_CSRformat(o_dat);
-	assemblePDBEwork_CSRformat(o_dat);
-	assembleSEDbyFEM_CSRformat(o_dat);
+	assembleInterWorkPD_CSRformat(o_dat, U_N.get());
+	assemblePDBEwork_CSRformat(o_dat, U_N.get());
+	assembleSEDbyFEM_CSRformat(o_dat, U_N.get());
 	//==all reduce sum;
 	MPI_Allreduce(cdp_Ku, cdp_KuGlo, cip_ia[numEq], MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 	MPI_Allreduce(cdp_F, cdp_FGlo, numEq, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);

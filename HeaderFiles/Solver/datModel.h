@@ -104,6 +104,7 @@ public:
 	int ci_failFlag;// 0--equivalent stress; 1--critical stretch;
 	bool cb_lumpedMass;
 	int ci_TESflag;//2: 2nd TES, 3:3rd TES
+	bool cb_Newmark;// nNewmark's method.
 	//=============END flags=========================
 
 	//=========NO fail
