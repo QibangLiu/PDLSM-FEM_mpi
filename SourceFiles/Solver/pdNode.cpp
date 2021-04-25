@@ -99,6 +99,7 @@ void pdNode::printStressTensor_vtk(ofstream& fout)
 	fout << cdp_sigma[0] << ' ' << cdp_sigma[3] << ' ' << cdp_sigma[5] << endl;
 	fout << cdp_sigma[3] << ' ' << cdp_sigma[1] << ' ' << cdp_sigma[4] << endl;
 	fout << cdp_sigma[5] << ' ' << cdp_sigma[4] << ' ' << cdp_sigma[2] << endl;
+	//0-xx, 1-yy, 2-zz, 3-xy, 4-yz, 5-zx;
 }
 
 

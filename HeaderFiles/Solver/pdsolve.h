@@ -11,8 +11,21 @@
 #include<mpi.h>
 #include<omp.h>
 #include<limits>
+#include<queue>
 //#define pi  3.141592653589793
 using namespace std;
+struct critStru 
+{
+	// criterion structure;
+	// for top K criterion.
+	double sd_value;
+	int si_famk, si_m;
+	critStru(double val, int famk, int m) { sd_value = val; si_famk = famk; si_m = m; }
+	bool operator<(const critStru& s_a) const  //operator <
+	{
+		return sd_value > s_a.sd_value; //min top heap;
+	}
+};
 class pdsolve
 {
 public:
@@ -111,13 +124,16 @@ public:
 	//===quasi-static solver================
 	//===================================
 	//==CSR format
-	void pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq);
+	void pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq, bool AddLoad);
 	void pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
 
 	//==failure criterion
 	double failureCriterion_stretch(datModel& o_dat);
 	double failureCriterion_stress(datModel& o_dat);
-	double failureCriterion_stressCut(datModel& o_dat);
+	double failureCriterion_TopK_Stress(datModel& o_dat,int Tk,bool &addLoad);// TopK is the largest k elements in a set.
+	bool Finally_TopK_andUpdate_bondStaus(datModel& o_dat, int Tk, priority_queue<critStru>& TopK, int flag);
+	double failureCriterion_stressCut(datModel& o_dat, int Tk, bool& addLoad);
+	bool segCirclePlanIntersect(double xp1[], double xp2[], double xc[], double norm[3],double Del);
 	void calLocalDamage(datModel& o_dat);
 	//==vary ebc;
 	void setVaryEssentialBC(datModel&o_dat);
@@ -169,7 +185,7 @@ private:
 	//int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	//// PD node on the interface, interact with node in fem domain or not
 	//int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
-	bool cb_InteralForce;
+	//bool cb_InteralForce;
 	////=============END flags=========================
 	//============================================
 	double cd_beta, cd_gamma;
