@@ -12,7 +12,7 @@ datModel::datModel()
 	ci_numFami = 0;
 	//=====initial flages;
 	ci_solvFlag = -1;
-	ci_PDBN_ITA_flag = 1;
+	ci_PDBN_ITA_flag = 0;
 	ci_failFlag = 1;//0-stress,1-stretch
 	cb_lumpedMass = false;
 	ci_TESflag = 2;

@@ -26,6 +26,7 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	}
 	o_files.CMDfile(o_modeldata, fin);
 	fin.close();
+	printf("test %d\n", ci_rank);
 	//o_modeldata.writeData();
 	//===========solving===========================
 	double t1, t2;
@@ -33,10 +34,14 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	{
 		const char* proName = o_modeldata.cs_title.c_str();
 		printf("PDLSM-FEM solving project of %s.........\n", proName);
-		t1= MPI_Wtime();
+		
 	}
 	pdsolve o_sol(o_modeldata, ci_rank, ci_numProce);
-	o_sol.pdfemSolver(o_modeldata, o_files);
+	if (ci_rank==0)
+	{
+		t1 = MPI_Wtime();
+	}
+	o_sol.pdfemSolver(o_modeldata, o_files,argv);
 	if (ci_rank==0)
 	{
 		double t2 = MPI_Wtime();

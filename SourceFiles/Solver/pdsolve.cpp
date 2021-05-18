@@ -86,11 +86,13 @@ pdsolve::~pdsolve()
 
 void pdsolve::setDatModel(datModel& o_dat)
 {
+	int temp = 0;
+	MPI_Bcast(&temp, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	if (ci_rank==0)
 	{
 		printf("Setting data model......\n");
 	}
-	
+
 	// below is order dependent;
 	setFEID_PDEID(o_dat);
 	Setdof_Index(o_dat);
@@ -98,9 +100,9 @@ void pdsolve::setDatModel(datModel& o_dat)
 	if (o_dat.getTotnumFami()!=0)// if not pure FEM
 	{
 		findDomainDimen(o_dat);
-		calVolumeOfNode(o_dat);
-		setDeltaMaxMin(o_dat);
-		setBlockAndFami(o_dat);
+		calVolumeOfNode(o_dat);//mpi
+		setDeltaMaxMin(o_dat);//mpi
+		setBlockAndFami(o_dat);//mpi
 		initialBondState(o_dat);
 		setNoFailRegion(o_dat);
 	}
@@ -310,13 +312,11 @@ void pdsolve::calVolumeOfNode(datModel& o_dat)
 			
 		}
 	}
-	MPI_Reduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-	MPI_Bcast(glo_V, numNode, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Allreduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 	for (int i = 0; i < numNode; i++)
 	{
 		o_dat.op_getNode(i)->setVolume(glo_V[i]);
 	}
-	
 	//==release memory;
 	delete[] loc_V, delete[] glo_V;
 	loc_V = NULL; glo_V = NULL;
@@ -488,11 +488,13 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	totNumPDN = o_dat.civ_pdNodeIDX.size();
 	startP = ci_rank * totNumPDN / ci_numProce;
 	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
+	/*startP = 0;
+	endP = totNumPDN;*/
 	//=====
-	double delta_k, delta_j;
+	double delta_k, delta_j, maxDel;
 	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
 	double dist;//distance between MPx, cx
-	int numNodeoB, NodeIDoB, numDimen, maxDel;
+	int numNodeoB, NodeIDoB, numDimen; 
 	numDimen = o_dat.ci_Numdimen;
 	maxDel = o_dat.op_getGeomP()->getmaxDelta();
 	//int countFam = 0;
@@ -527,10 +529,9 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
 							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
 							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
-							dist = sqrt((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
+							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
 								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
-							if (dist > maxDel * 1.0E-16 &&( dist < (delta_k + maxDel * 1.0E-15)
-								 || dist < (delta_j + maxDel * 1.0E-15)))
+							if (dist > maxDel* maxDel * 1.0e-13 &&( dist < (delta_k* delta_k + maxDel* maxDel * 1.0e-13)|| dist < (delta_j* delta_j + maxDel* maxDel * 1.0e-13)))
 							{
 								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
 							}
@@ -541,7 +542,6 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 		}
 		
 	}
-
 	//==== sent and receive data;
 	int LocSP, LocEP;
 	int* numNDofFam = new int[totNumPDN];
@@ -3333,19 +3333,19 @@ void pdsolve::calExternalForce_CSRformat(datModel& o_dat)
 	}
 }
 
-void pdsolve::pdfemSolver(datModel& o_dat, fioFiles& o_files)
+void pdsolve::pdfemSolver(datModel& o_dat, fioFiles& o_files, char* argv[])
 {
 	if (o_dat.ci_solvFlag==1)
 	{
 		//static solver
-		pdfemStaticSolver_CSRformat(o_dat, o_files);
+		pdfemStaticSolver_CSRformat(o_dat, o_files,argv);
 	}
 	else if (o_dat.ci_solvFlag==0)
 	{
 		//dynamic solver;
 		if (o_dat.cb_Newmark)
 		{
-			pdfemDynamicNewmarkSolver_CSRformat(o_dat, o_files);
+			pdfemDynamicNewmarkSolver_CSRformat(o_dat, o_files,argv);
 		}
 		else
 		{
@@ -3705,11 +3705,14 @@ void pdsolve::pdfemStaticSolver(datModel& o_dat)
 	calGlobalNodeStresses(o_dat);
 }
 
-void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
+void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files,char* argv[])
 {
-	
+	//argv[2]: number of nodes,
+	//argv[3]: test ID;
+	//argv[4]: V_pd fraction;
 	//Don't need block data any more for static solver;
 	//o_dat.deleteBLOCK();
+	double t1, t2;
 	//================
 	o_dat.ci_solvFlag = 1;// remove later;
 	if (o_dat.ci_solvFlag != 1)
@@ -3733,6 +3736,7 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	if (ci_rank == 0)
 	{
 		printf("Assembling Equations.....\n");
+		t1 = MPI_Wtime();
 	}
 	pdfemAssembleEquasSys_CSRformat(o_dat,numEq);
 	if (ci_rank == 0)
@@ -3750,6 +3754,9 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 				cdp_FGlo, Ug->cdp_vecCoeff, &comm);
 	if (ci_rank == 0)
 	{
+		/*t2 = MPI_Wtime();
+		double memo = (((numEq + 1) + cip_ia[numEq]) * 4.0 + cip_ia[numEq] * 8.0) / 1024;*/
+		//printf("DATA:time, %f, memo(kb), %f,numNon-zero, %d, testID, %d,nodes, %d, cores, %d, mRatio, %f, Vpdfrac, %d \n", t2 - t1, memo, cip_ia[numEq], atoi(argv[3]), atoi(argv[2]), ci_numProce,o_dat.op_getGeomP()->cd_factor, atoi(argv[4]));
 		printf("Finshed cluster_PARDISO static solving.\n");
 	}
 	/*store results========;*/
@@ -3780,7 +3787,7 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	if (ci_rank == 0)
 	{
 		//===========post processing=====================
-		printf("writing results.......\n");
+		printf("writing results........\n");
 		o_files.writeResults(o_dat);
 	}
 }
@@ -4194,11 +4201,11 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
 	}
 }
 
-void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files)
+void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files, char* argv[])
 {
 	//===========static solver to set the start ebc of dynamic solver;
 	o_dat.ci_solvFlag = 1;
-	pdfemStaticSolver_CSRformat(o_dat,o_files); // stress calculated;
+	pdfemStaticSolver_CSRformat(o_dat,o_files,argv); // stress calculated;
 	double ratio;
 	if (o_dat.ci_failFlag == 0)
 	{
@@ -4240,7 +4247,7 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 		}
 	}
 	//static solver for start ebc;
-	pdfemStaticSolver_CSRformat(o_dat, o_files); // stress calculated;
+	pdfemStaticSolver_CSRformat(o_dat, o_files,argv); // stress calculated;
 	// updat bond-state
 	o_dat.ci_solvFlag = 1;
 	//////??????????need here???

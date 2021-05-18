@@ -9,7 +9,7 @@ pdGaussPt o_globGP(2);
 pdGaussPt o_sigGP(2);// this GP is for stress extraplation;
 int main(int argc, char* argv[])
 {
-	omp_set_num_threads(4);
+	//omp_set_num_threads(4);
 	MPI_Init(&argc, &argv);// message passing interface
 	pdfem_mpi po_pdfem(argc, argv);
 	MPI_Finalize();

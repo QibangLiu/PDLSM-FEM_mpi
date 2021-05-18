@@ -92,7 +92,7 @@ public:
 	void assembleSEDbyFEM_CSRformat(datModel& o_dat, double* U_N);//CSR ---assemble strain energy density by fem ;
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
 	//===========Solvers================================
-	void pdfemSolver(datModel& o_dat, fioFiles& o_files);
+	void pdfemSolver(datModel& o_dat, fioFiles& o_files, char* argv[]);
 	void calinternalForce_CSRformat(datModel& o_dat, int numEq, double* U_N);
 	//===================================
 	//====static solver==================
@@ -103,7 +103,7 @@ public:
 	//===CSR format
 	void setCSRIndexes_gloStiffMat(datModel& o_dat);
 	void pdfemAssembleEquasSys_CSRformat(datModel& o_dat, int numEq);
-	void pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
+	void pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files, char* argv[]);
 	//===================================
 	//===dynamical solver================
 	//===================================
@@ -115,7 +115,7 @@ public:
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
 	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files);
 	//===Newmark's method
-	void pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
+	void pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files, char* argv[]);
 	void pdfemAssembleKN_CSRformat(datModel& o_dat, int numEq, int n);
 	void pdfemAssembleKNFR_CSRformat(datModel& o_dat, int numEq, Vector* a_n, Vector* V_n,double *U_N, int n);
 	void updateDispVelo(Vector* Vu_n, Vector* Vv_n, Vector* Va_n, Vector* Va_np1, int numEq, datModel& o_dat);
