@@ -14,19 +14,26 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	datModel o_modeldata;
 	//===========input file=======
 	ifstream fin;		//fin for input file
-	char* ifName = argv[1];
+	string ifName; 
+	if (argc>1)
+	{
+		ifName = argv[1];
+	}
+	else
+	{
+		ifName = "PDFEMcmd.in";
+	}
 	fin.open(ifName);
 	if (ci_rank==0)
 	{
 		if (!fin.is_open())
 		{
-			printf("File %s is not exist\n", ifName);
+			printf("ERROR: Command file \"%s\" is not exist.\n", ifName);
 			exit(0);
 		}
 	}
 	o_files.CMDfile(o_modeldata, fin);
 	fin.close();
-	printf("test %d\n", ci_rank);
 	//o_modeldata.writeData();
 	//===========solving===========================
 	double t1, t2;

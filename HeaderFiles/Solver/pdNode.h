@@ -32,6 +32,7 @@ public:
 	void setFamID(int famID);
 	int getFamID()const;
 	//stress;
+	void calSigzz(const double &nu);
 	void setStress(int i, double val);
 	void getStress(double sigma[]);
 	void addStress(int i, double val);

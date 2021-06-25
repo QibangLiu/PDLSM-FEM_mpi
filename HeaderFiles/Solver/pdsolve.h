@@ -45,7 +45,6 @@ public:
 	void setNoFailRegion(datModel& o_dat);
 	//============PD algorithem===============================================;
 	//====some auxiliary functions
-	bool segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3]);
 	long long int findCSRIndexOfMat(int rowIndex, int colIndex);
 	double calArea(double vec1[], double vec2[]);
 	void shapeFunctionQuad4N(double N[], double p, double q);
@@ -59,6 +58,7 @@ public:
 	void matG2D(Matrix* G, Matrix* A, pdFamily* p_fami, int m, datModel& o_dat);
 	void matH2D(Matrix* H, pdFamily* p_fami, datModel& o_dat);
 	void matC2D(Matrix* C, pdFamily* p_fami, datModel& o_dat);
+	void DispGrad(double DG[], int NID, datModel& o_dat);//for calculate displacement gradient;
 	//functions for 3D====
 	void shapTens3D(Matrix* A, pdFamily* p_fami, datModel& o_dat);
 	void shapTens3D3rd(Matrix* A, pdFamily* p_fami, datModel& o_dat);
@@ -91,9 +91,12 @@ public:
 	void calExternalForce(datModel& o_dat); // calcule equivalent extern nodal force;
 	void assembleSEDbyFEM_CSRformat(datModel& o_dat, double* U_N);//CSR ---assemble strain energy density by fem ;
 	void calExternalForce_CSRformat(datModel& o_dat);//CSR ---equivalent extern nodal force
-	//===========Solvers================================
+	//==========================================================================
+	//===========Solvers==========Solvers========Solvers====================
+	//==========================================================================
 	void pdfemSolver(datModel& o_dat, fioFiles& o_files, char* argv[]);
 	void calinternalForce_CSRformat(datModel& o_dat, int numEq, double* U_N);
+	void calReacForc(datModel& o_dat, ofstream& fout, int stepN);
 	//===================================
 	//====static solver==================
 	//===================================
@@ -113,7 +116,7 @@ public:
 	void assembleElemassMatFEM_CSRformat(datModel& o_dat);//CSR ---element mass ;
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
-	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files);
+	void pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles &o_files, char* argv[]);
 	//===Newmark's method
 	void pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_files, char* argv[]);
 	void pdfemAssembleKN_CSRformat(datModel& o_dat, int numEq, int n);
@@ -127,39 +130,46 @@ public:
 	void pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int numEq, bool AddLoad);
 	void pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files);
 
-	//==failure criterion
-	double failureCriterion_stretch(datModel& o_dat);
-	double failureCriterion_stress(datModel& o_dat);
+	//==failure criterion===========================
+	double failureProcess(datModel& o_dat, int Tk, bool& addLoad,ofstream&cracPath);
+	double failureCriterion_stretch(datModel& o_dat, int Tk, bool& addLoad); // add 2d Sc later;
+	double failureCriterion_stress(datModel& o_dat, int Tk, bool& addLoad);
 	double failureCriterion_TopK_Stress(datModel& o_dat,int Tk,bool &addLoad);// TopK is the largest k elements in a set.
 	bool Finally_TopK_andUpdate_bondStaus(datModel& o_dat, int Tk, priority_queue<critStru>& TopK, int flag);
-	double failureCriterion_stressCut(datModel& o_dat, int Tk, bool& addLoad);
-	bool segCirclePlanIntersect(double xp1[], double xp2[], double xc[], double norm[3],double Del);
+	//===maximum principal stress;
+	double failureCriterion_maxPriSig(datModel& o_dat, int Tk, bool& addLoad);
+	//==maximum circumferential tensile stress:Keq, KI, KII=========
+	bool b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath, double& KEQ);
+	void SIFsAndPropaDire(double& KI, double& KII, double& theta_c, double R, double m_R, datModel& o_dat, int ck, ofstream& fout);
+	void Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int NID2, double norV[], int ck, datModel& o_dat, ofstream& fout);
+	//handle damage;
+	void updateBondstate(double xN[][3], datModel& o_dat);
+	void updateBondState_CirclePlane(double xc[], double norm[], double maxDelta, datModel& o_dat);
+	bool intersection(double L1X1[], double L1X2[], double L2X1[], double L2X2[]);//judge two line segments intersect or not;
+	bool segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3]);
+	bool segCirclePlanIntersect(double xp1[], double xp2[], double xc[], double norm[], double Del);
 	void calLocalDamage(datModel& o_dat);
-	//==vary ebc;
+	//==vary ebc=================;
 	void setVaryEssentialBC(datModel&o_dat);
 	void setVaryNaturalBC(datModel& o_dat);
 	void set_step_DispBC_qusia_static(datModel& o_dat);
 	void resetDispBC(datModel& o_dat, double Multip);
 
-	void calReacForc(datModel& o_dat, ofstream& test,double &totReaF);
+
 
 	
 	void PDsolve(datModel&o_dat, ofstream&test);
 	
 	//quasi-static solve;
 	void PDsolveQusiaStatic(datModel& o_dat, ofstream& test);
-	void SIFsAndPropaDire(double &KI, double &KII, double &theta_c, double R, double m_R, datModel& o_dat, double* cracTip,ofstream &test);
-	void Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int NID2, double norV[], double* cracTip, datModel& o_dat, ofstream& test);
+	
+	
 	void DispGrad(double DG[], int NID, datModel& o_dat, ofstream& test);//for calculate displacement gradient;
-	bool b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath, int solType);
+
 	void cracPropag_qusiaStatic(datModel& o_dat, ofstream& test, int solType, double& maxeigv);
 	void SIFsAndPropaDire_GaussIntegr(double& KI, double& KII, double& theta_c, double R, datModel& o_dat, double* cracTip, ofstream& test);
 	void Jintegr_GaussIntegr(double& I_m1, double& I_m2, int eleID, double* dp_q, double* cracTip, datModel& o_dat, ofstream& test);
 	void DispGradAndStressAndPqPx_FEM(double DG[], double sigma[], double PqPx[2], double* dp_q, int ele, double p, double q, datModel& o_dat, ofstream& test);
-	//handle damage;
-	void calBondstate(double x1[], double x2[], datModel &o_dat);
-	bool intersection(double L1X1[], double L1X2[], double L2X1[], double L2X2[]);//judge two line segments intersect or not;
-
 	void judgeBondState(datModel &o_dat, ofstream&test, int solType,double &maxeigv);
 	
 
@@ -178,7 +188,7 @@ private:
 	pdsolve();
 	//===MPI rank, number of processor;
 	int ci_rank, ci_numProce;
-
+	double cd_blockFac;//block size factor;
 	//============================================
 	////==============FLAGs ========================
 	////===solver;

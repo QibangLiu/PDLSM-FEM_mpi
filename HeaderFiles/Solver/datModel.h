@@ -21,7 +21,9 @@
 #include "pdReactionForceNode.h"
 #include"pdfemEssentialBCs.h"
 #include"dataLev2.h"
+#include"pdReacForceEle.h"
 #include<vector>
+#include<algorithm>
 
 //#define pi  3.141592653589793
 //const double pi = acos(-1.0);
@@ -78,42 +80,60 @@ public:
 	void SetNumFamilies(int numFami);
 	void allocaMemoryFami();
 
+	void setEssentialBC(int id, double val);
 
 	dataLev2* cop_datLev2;
 	string cs_title;
+	string cs_fileName;
 	int ci_Numdimen;
 	int ci_eleType;//element Type;
 	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
 						//or pure FE node volume, or family setting, or FE mass
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
 	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function;
-
-	//==crack
+	//====for reaction force=========================
+	vector<int>civ_reacForceOfessBCId;
+	vector<int>civ_reaForceNID;
+	pdReacForceEle** cop2_reacForceEle;
+	int ci_numReacForceEle;
+	void setReacForcNode();
+	//====================================
+	//==crack===========================
 	int ci_numCrack;
 	double (*cdp_crack)[3][3];
-	//==solving setting;
+	//==solving setting=================;
 	double cd_dt;
 	int ci_numTstep;
 	int ci_savefrequence;
+	double cd_NLF;//non-local factor;
+	double cd_gamma, cd_beta;
 	//============================================
 	//==============FLAGs ========================
 	//===solver;
 	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	// PD node on the interface, interact with node in fem domain or not
 	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
-	int ci_failFlag;// 0--equivalent stress; 1--critical stretch;
+	/*====failure criterion flags:
+	0--critical stretch; 
+	1--equivalent stress; 
+	2--maximum circumferential tensile stress;
+	3-- maximum principal stress*/
+	int ci_failFlag;
 	bool cb_lumpedMass;
 	int ci_TESflag;//2: 2nd TES, 3:3rd TES
 	bool cb_Newmark;// nNewmark's method.
+	int ci_proType;
+	int ci_topk;
+	bool cb_vtkBinary;
 	//=============END flags=========================
 
-	//=========NO fail
+	//=========NO fail===========
 	int ci_numNOFAILnode;
 	int *cip_NOFailNode;
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;
-	int ci_proType;
+	
 	
 	int ci_numVaryEssenBC;
 	int ci_numNode;//number of material points
@@ -146,8 +166,7 @@ private:
 
 	
 	// set famlily;
-	//set reaction force node;
-	void setReacForcNode();
+	
 
 };
 

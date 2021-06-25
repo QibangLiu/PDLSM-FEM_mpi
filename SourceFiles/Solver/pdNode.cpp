@@ -91,7 +91,7 @@ void pdNode::printStress(ofstream & fout)
 
 void pdNode::printStressTensor_vtk(ofstream& fout)
 {
-	double cdp_sigma[6];
+	float cdp_sigma[6];
 	for (int i = 0; i < 6; i++)
 	{
 		cdp_sigma[i] = (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + i]);
@@ -156,6 +156,14 @@ int pdNode::getFamID() const
 }
 
 
+
+void pdNode::calSigzz(const double& nu)
+{
+	//calculate sigma_zz for plane strain problem;
+	cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + 2] = nu * (cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + 0] +
+		cop_datLev2->cdp_sigma[6 * (ci_NodeId - 1) + 1]);
+
+}
 
 void pdNode::setStress(int i, double val)
 {

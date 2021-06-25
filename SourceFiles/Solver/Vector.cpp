@@ -77,6 +77,15 @@ void  Vector::print(ofstream & fout)
 	}
 }
 
+void Vector::print()
+{
+	std::cout << "Row Number: " << ci_vecRow << endl;
+	for (int i = 0; i < ci_vecRow; i++)
+	{
+		cout << setiosflags(ios::scientific) << setprecision(12) << setw(15) << cdp_vecCoeff[i] << endl;
+	}
+}
+
   /* void Vector::Vecmultiply(double value)
    {
 	   for (int i = 0; i < ci_vecRow; i++)

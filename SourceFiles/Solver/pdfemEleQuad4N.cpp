@@ -5,6 +5,7 @@ extern pdGaussPt o_sigGP;
 pdfemEleQuad4N::pdfemEleQuad4N(int id, int* nId, int algoType, dataLev2* p_datLev2) :
 	pdfemEles(id, 4, nId, algoType,p_datLev2)
 {
+	ci_eleType = 9;
 }
 
 pdfemEleQuad4N::~pdfemEleQuad4N()
@@ -54,7 +55,7 @@ double pdfemEleQuad4N::detJacobi(double xN[][3], double p, double q, double r)
 		J[1][1] = J[1][1] + dNdq[i] * xN[i][1];
 	}
 	double detJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
-	return abs(detJ);
+	return detJ;
 }
 
 void pdfemEleQuad4N::eleFitStresses(int flag, Vector* Nsigma[], Matrix* D, Matrix* L, Vector* Ue, double xN[][3])
@@ -208,6 +209,7 @@ void pdfemEleQuad4N::print_vtk(ofstream& fout, int* eleNodeID)
 
 double pdfemEleQuad4N::eleVolume(double xN[][3])
 {
+	//This part maybe modified;
 	double VolEle = 0;
 	double wp, wq, detJ, p, q, r = 0;
 	int nG = o_globGP.i_getNumPts();

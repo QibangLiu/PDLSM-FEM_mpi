@@ -9,6 +9,7 @@ The  Vector class defines a vector (a 1D arrau).
 #include <fstream>
 #include<iomanip>
 #include<cmath>
+#include<iostream>
 using namespace std;
 class Vector {
 public:
@@ -33,6 +34,7 @@ public:
 	double d_getCoeff(int i);	// return cdp_vecCoeff[i];
 	double d_getmol()const;
 	void print(ofstream &fout);	// print useful info
+	void print();
 	//void Vecmultiply(double value);//each component times value;
 private:
 	// never to be used copy constructor

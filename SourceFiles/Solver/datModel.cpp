@@ -1,4 +1,5 @@
 #include "datModel.h"
+#include<unordered_set>
 using namespace std;
 datModel::datModel()
 {
@@ -10,14 +11,22 @@ datModel::datModel()
 	cop_datLev2 = new dataLev2();
 	ci_numCrack = 0;
 	ci_numFami = 0;
+	cd_NLF = 0.33;
+	cd_dt = 1.0;
+	ci_numTstep = 1;
+	ci_savefrequence = 1;
+	cd_gamma = 0.5;
+	cd_beta = 0.25;
 	//=====initial flages;
+	ci_topk = 0;
 	ci_solvFlag = -1;
-	ci_PDBN_ITA_flag = 0;
-	ci_failFlag = 1;//0-stress,1-stretch
+	ci_PDBN_ITA_flag = 1;
+	ci_failFlag = -1;//1-stress,0-stretch
 	cb_lumpedMass = false;
 	ci_TESflag = 2;
+	cb_vtkBinary = true;
 	//==
-	cb_Newmark = true;
+	cb_Newmark = false;
 }
 
 datModel::~datModel()
@@ -83,11 +92,21 @@ void datModel::readdata(ifstream & fin)
 		}
 		else if (ci_eleType==10)
 		{
+			//tetrahedron
 			for (int j = 0; j < 4; j++)
 			{
 				fin >> eleNid[j];
 			}
 			cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNid, algoType, cop_datLev2);
+		}
+		else if (ci_eleType==9)
+		{
+			//quad 
+			for (int j = 0; j < 4; j++)
+			{
+				fin >> eleNid[j];
+			}
+			cop2_Eles[i] = new pdfemEleQuad4N(Eid, eleNid, algoType, cop_datLev2);
 		}
 		else
 		{
@@ -100,17 +119,24 @@ void datModel::readdata(ifstream & fin)
 	string s_blank;
 	getline(fin, s_blank);
 	getline(fin, s_blank);
-	int bNid[4];
+	int bNid[4], tn=0;
 	fin >> ci_numPDBEs;
 	cop2_PDBE = new pdPDBEs*[ci_numPDBEs];
+	if (ci_Numdimen==3)
+	{
+		tn = 4;
+	}
+	else if (ci_Numdimen == 2)
+	{
+		tn = 2;
+	}
 	for (int i = 0; i < ci_numPDBEs; i++)
 	{
-		for (int j = 0; j < 4; j++)
+		for (int j = 0; j < tn; j++)
 		{
 			fin >> bNid[j];
 		}
-		//fin >> normDire;
-		cop2_PDBE[i] = new pdPDBEs(bNid, 4);
+		cop2_PDBE[i] = new pdPDBEs(bNid, tn);
 	}
 	//=========read the boundry condition=========
 	//=====read essensital BCs;
@@ -135,8 +161,16 @@ void datModel::readdata(ifstream & fin)
 		{
 			fin >> Nid;
 			cop2_EssenBCs[i]->cip_NID[j] = Nid;
-			cop2_Node[Nid - 1]->op_getDof(i_dof)->setValue(val);
-			cop2_Node[Nid - 1]->op_getDof(i_dof)->setNotActive();
+			if (cop2_Node[Nid - 1]->op_getDof(i_dof)->b_isActive())
+			{
+				cop2_Node[Nid - 1]->op_getDof(i_dof)->setValue(val);
+				cop2_Node[Nid - 1]->op_getDof(i_dof)->setNotActive();
+			}
+			else
+			{
+				printf("ERROR: The DOF of node %d is repeatly defined!\n", Nid);
+				exit(0);
+			}
 		}
 	}
 	//=========== read Point BC===================
@@ -156,6 +190,10 @@ void datModel::readdata(ifstream & fin)
 		else if (s_fDof == "FY")
 		{
 			fDof = 1;
+		}
+		else if (s_fDof == "FZ")
+		{
+			fDof = 2;
 		}
 		else
 		{
@@ -179,11 +217,11 @@ void datModel::readdata(ifstream & fin)
 		numEle = cop2_NaturalBC[i]->getNumEle();
 		for (int j = 0; j < numEle; j++)
 		{
-			for (int k = 0; k < 4; k++)
+			for (int k = 0; k < tn; k++)
 			{
 				fin >> nbcConNID[k];
 			}
-			cop2_NaturalBC[i]->initialEles(j, nbcConNID, 4,cop_datLev2);
+			cop2_NaturalBC[i]->initialEles(j, nbcConNID, tn,cop_datLev2);
 		}
 	}
 	//read no fail region
@@ -220,14 +258,14 @@ void datModel::readdata(ifstream & fin)
 		{
 			for (int j = 0; j < 2; j++)//point 
 			{
-				for (int k = 0; k < 2; k++)// x, y,z
+				for (int k = 0; k < 3; k++)// x, y,z
 				{
 					fin >> cdp_crack[i][j][k];
 				}
-
 			}
 		}
 	}
+
 	//fin >> ci_numCrack;
 	//cdp2_crack = new double* [ci_numCrack];
 	//for (int i = 0; i < ci_numCrack; i++)
@@ -347,6 +385,21 @@ void datModel::allocaMemoryFami()
 		cout << "Error in memory allocation for families." << endl;
 		exit(0);
 	}
+}
+
+void datModel::setEssentialBC(int id,double val)
+{
+	
+	int numNODE = cop2_EssenBCs[id]->getNumNODE();
+	cop2_EssenBCs[id]->cd_value = val;
+	int i_dof = cop2_EssenBCs[id]->getDOF();
+	int Nid;
+	for (int j = 0; j < numNODE; j++)
+	{
+		Nid = cop2_EssenBCs[id]->cip_NID[j];
+		cop2_Node[Nid - 1]->op_getDof(i_dof)->setValue(val);
+	}
+	
 }
 
 int datModel::getTotnumEle() const
@@ -564,43 +617,76 @@ void datModel::setNumBlocs(int numBlocks[])
 	}
 }
 
-//void datModel::setReacForcNode()
-//{
-//	int dire;
-//	cout << "please input reaction force direction (0/1)" << endl;
-//	cin >> dire;
-//	if (dire!=0&&dire!=1)
-//	{
-//		cout << "Error: please input 0 or 1" << endl;
-//	}
-//
-//	int conNId[4], reaFNid;
-//	int algoType;
-//	for (int ele = 0; ele < ci_numEle; ele++)
-//	{
-//		algoType = cop2_Ele4N[ele]->getAlgoType();
-//		if (algoType==2)
-//		{
-//			cop2_Ele4N[ele]->getConNid(conNId);
-//
-//
-//			for (int k = 0; k < ci_numReaForceNode; k++)
-//			{
-//				reaFNid = cop2_ReaForceNode[k]->getNid();
-//				for (int i = 0; i < 4; i++)
-//				{
-//					if (conNId[i]== reaFNid)
-//					{
-//						cop2_ReaForceNode[k]->putEleInside(ele + 1,2*i+dire);
-//						break;
-//					}
-//				}
-//				
-//			}
-//			
-//		}
-//	}
-//}
+void datModel::setReacForcNode()
+{
+	/*====find the elements for these node that need to get node force;
+	This function may be parallelize in future;
+	binary_search(begin, end, val) find exist or not;
+	upper_bound(begin, end , value); upper_bound to find the first one larger than value, return iterator position*/
+	unordered_set<int> reaForNID;
+	vector<int>::iterator iter;
+	int i_temp, numN;
+	for (iter = civ_reacForceOfessBCId.begin(); iter!= civ_reacForceOfessBCId.end(); iter++)
+	{
+		if (*iter > -1 && *iter < ci_numEssentialBCs)
+		{
+			numN = cop2_EssenBCs[*iter]->getNumNODE();
+			for (int i = 0; i < numN; i++)
+			{
+				i_temp = cop2_EssenBCs[*iter]->cip_NID[i];
+				reaForNID.insert(i_temp);
+			}
+		}
+	}
+	civ_reaForceNID.assign(reaForNID.begin(), reaForNID.end());
+	reaForNID.clear();
+	if (!civ_reaForceNID.empty())
+	{
+		//sort
+		sort(civ_reaForceNID.begin(), civ_reaForceNID.end());
+		//=========find element;
+		int* conNId, reaFNid, nNE;
+		vector<int>reaForceEle;
+		for (int ele = 0; ele < ci_numEle; ele++)
+		{
+			nNE = cop2_Eles[ele]->ci_numNodes;
+			conNId = new int[nNE];
+			cop2_Eles[ele]->getConNid(conNId);
+			for (int i = 0; i < nNE; i++)
+			{
+				if (binary_search(civ_reaForceNID.begin(), civ_reaForceNID.end(), conNId[i]))
+				{
+					reaForceEle.push_back(ele);
+					break;
+				}
+			}
+			delete[] conNId;
+			conNId = NULL;
+		}
+		ci_numReacForceEle = reaForceEle.size();
+		cop2_reacForceEle = new pdReacForceEle * [ci_numReacForceEle];
+		for (int k = 0; k < ci_numReacForceEle; k++)
+		{
+			cop2_reacForceEle[k] = new pdReacForceEle(reaForceEle.at(k));
+			nNE = cop2_Eles[reaForceEle.at(k)]->ci_numNodes;
+			conNId = new int[nNE];
+			cop2_Eles[reaForceEle.at(k)]->getConNid(conNId);
+			for (int i = 0; i < nNE; i++)
+			{
+				if (binary_search(civ_reaForceNID.begin(), civ_reaForceNID.end(), conNId[i]))
+				{
+					cop2_reacForceEle[k]->civ_reaForceEleNidx.push_back(i);
+					i_temp = upper_bound(civ_reaForceNID.begin(), civ_reaForceNID.end(), conNId[i]) - civ_reaForceNID.begin() - 1;
+					cop2_reacForceEle[k]->civ_reaForceCPNDnodeIDX.push_back(i_temp);
+
+				}
+			}
+			delete[] conNId;
+			conNId = NULL;
+		}
+	}
+	
+}
 
 
 
