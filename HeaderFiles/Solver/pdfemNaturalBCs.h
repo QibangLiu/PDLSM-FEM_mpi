@@ -1,5 +1,6 @@
 #pragma once
 #include"pdfemEleQuad4N.h"
+#include"pdfemEleTri3N.h"
 #include"pdfemEleLine2N.h"
 #include"Matrix.h"
 #include"calMatrixOperations.h"

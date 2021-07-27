@@ -210,7 +210,7 @@ void pdfemEleQuad4N::print_vtk(ofstream& fout, int* eleNodeID)
 double pdfemEleQuad4N::eleVolume(double xN[][3])
 {
 	//This part maybe modified;
-	double VolEle = 0;
+	/*double VolEle = 0;
 	double wp, wq, detJ, p, q, r = 0;
 	int nG = o_globGP.i_getNumPts();
 	for (int mp = 0; mp < nG; mp++)
@@ -224,7 +224,16 @@ double pdfemEleQuad4N::eleVolume(double xN[][3])
 			detJ = detJacobi(xN, p, q, r);
 			VolEle = VolEle + wp * wq * detJ;
 		}
-	}
+	}*/
+	double mat[3][3];
+	mat[0][0] = 1, mat[0][1] = xN[0][0], mat[0][2] = xN[0][1];
+	mat[1][0] = 1, mat[1][1] = xN[1][0], mat[1][2] = xN[1][1];
+	mat[2][0] = 1, mat[2][1] = xN[2][0], mat[2][2] = xN[2][1];
+	double VolEle = 0.5 * abs(detMat33(mat));
+	mat[0][0] = 1, mat[0][1] = xN[2][0], mat[0][2] = xN[2][1];
+	mat[1][0] = 1, mat[1][1] = xN[3][0], mat[1][2] = xN[3][1];
+	mat[2][0] = 1, mat[2][1] = xN[0][0], mat[2][2] = xN[0][1];
+	VolEle = VolEle + 0.5 * abs(detMat33(mat));
 	return VolEle;
 }
 

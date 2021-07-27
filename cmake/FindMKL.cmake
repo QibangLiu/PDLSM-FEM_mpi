@@ -17,7 +17,7 @@ if(WIN32)
     $ENV{MKLROOT}/lib/intel64/mkl_intel_ilp64.lib
     $ENV{MKLROOT}/lib/intel64/mkl_core.lib
     $ENV{MKLROOT}/lib/intel64/mkl_sequential.lib
-    $ENV{MKLROOT}/lib/intel64/mkl_blacs_intelmpi_ilp64.lib)
+    $ENV{MKLROOT}/lib/intel64/mkl_blacs_msmpi_ilp64.lib)
 elseif(UNIX)
     file(GLOB  MKL_LIBRARY 
     $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.so

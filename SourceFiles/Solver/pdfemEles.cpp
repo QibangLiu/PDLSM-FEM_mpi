@@ -97,36 +97,37 @@ void pdfemEles::print(ofstream & fout)
 
 int pdfemEles::getNumNodes_vtk() const
 {
-	switch (ci_eleType)
-	{
-	default:
-		cout << "ERROR: element type is wrong\n";
-		exit(0);
-	case 5:
-		return 3; // triangle
-	case 22:
-		return 6; //6n_triangle
-	case 9:
-		return 4; //quad
-	case 23:
-		return 8; //8n_quad;
-	case 10:
-		return 4; //4n_tetra
-	case 24:
-		return 10;//10n_tetra
-	case 12:
-		return 8;//hexahedron
-	case 25:
-		return 20;// 20n_HEXAHEDRON
-	case 13:
-		return 6; //wedge;
-	case 26:
-		return 15; //15n_wedge
-	case 14:
-		return 5;//pyramid;
-	case 27:
-		return 13;//13n_PYRAMID;
-	}
+	//switch (ci_eleType)
+	//{
+	//default:
+	//	cout << "ERROR: element type is wrong\n";
+	//	exit(0);
+	//case 5:
+	//	return 3; // triangle
+	//case 22:
+	//	return 6; //6n_triangle
+	//case 9:
+	//	return 4; //quad
+	//case 23:
+	//	return 8; //8n_quad;
+	//case 10:
+	//	return 4; //4n_tetra
+	//case 24:
+	//	return 10;//10n_tetra
+	//case 12:
+	//	return 8;//hexahedron
+	//case 25:
+	//	return 20;// 20n_HEXAHEDRON
+	//case 13:
+	//	return 6; //wedge;
+	//case 26:
+	//	return 15; //15n_wedge
+	//case 14:
+	//	return 5;//pyramid;
+	//case 27:
+	//	return 13;//13n_PYRAMID;
+	//}
+	return ci_numNodes;
 }
 
 int pdfemEles::getAlgoType() const

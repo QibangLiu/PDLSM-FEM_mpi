@@ -17,11 +17,13 @@ datModel::datModel()
 	ci_savefrequence = 1;
 	cd_gamma = 0.5;
 	cd_beta = 0.25;
+	cd_mr = 6.0;
+	cd_dcf = 1.0;
 	//=====initial flages;
 	ci_topk = 0;
 	ci_solvFlag = -1;
-	ci_PDBN_ITA_flag = 1;
-	ci_failFlag = -1;//1-stress,0-stretch
+	cb_FENSF = true;
+	ci_failFlag = 0;
 	cb_lumpedMass = false;
 	ci_TESflag = 2;
 	cb_vtkBinary = true;
@@ -64,7 +66,7 @@ void datModel::readdata(ifstream & fin)
 	//read the material point data 
 	int Nid;
 	double x[3];
-	fin >> ci_numNode >> ci_numEle >> ci_eleType;
+	fin >> ci_numNode >> ci_numEle;
 	cop2_Node = new pdNode*[ci_numNode];
 	cop_datLev2->cdp_sigma = new double[6 * ci_numNode];
 	cop_datLev2->cdp_X = new double[3 * ci_numNode];
@@ -82,36 +84,39 @@ void datModel::readdata(ifstream & fin)
 	for (int i = 0; i < ci_numEle; i++)
 	{
 		fin >> Eid >> algoType;
-		if (ci_eleType==12)//8N brick element
+		if (ci_Numdimen==3)
 		{
 			for (int j = 0; j < 8; j++)
 			{
 				fin >> eleNid[j];
 			}
-			cop2_Eles[i] = new pdfemEleBrick8N(Eid, eleNid, algoType, cop_datLev2);
-		}
-		else if (ci_eleType==10)
-		{
-			//tetrahedron
-			for (int j = 0; j < 4; j++)
+			if (eleNid[2]!=eleNid[3]&&eleNid[4]!=eleNid[5])
 			{
-				fin >> eleNid[j];
+				//8N brick element
+				cop2_Eles[i] = new pdfemEleBrick8N(Eid, eleNid, algoType, cop_datLev2);
 			}
-			cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNid, algoType, cop_datLev2);
-		}
-		else if (ci_eleType==9)
-		{
-			//quad 
-			for (int j = 0; j < 4; j++)
+			else
 			{
-				fin >> eleNid[j];
+				//4N tetrahedron 
+				cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNid, algoType, cop_datLev2);
 			}
-			cop2_Eles[i] = new pdfemEleQuad4N(Eid, eleNid, algoType, cop_datLev2);
 		}
 		else
 		{
-			printf("ERROR: element type is wrong.\n");
-			exit(0);
+			//2D ====
+			for (int j = 0; j < 4; j++)
+			{
+				fin >> eleNid[j];
+			}
+			if (eleNid[3]!=eleNid[2])
+			{
+				cop2_Eles[i] = new pdfemEleQuad4N(Eid, eleNid, algoType, cop_datLev2);
+			}
+			else
+			{
+				cop2_Eles[i] = new pdfemEleTri3N(Eid, eleNid, algoType, cop_datLev2);
+			}
+			
 		}
 		
 	}

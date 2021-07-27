@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include<mpi.h>
-#include<omp.h>
+//#include<omp.h>
 #include<limits>
 #include<queue>
 //#define pi  3.141592653589793
@@ -76,6 +76,11 @@ public:
 	void assembleLumpedMass(datModel& o_dat,int numEqua);
 	//====CSR format===
 	void assembleInterWorkPD_CSRformat(datModel& o_dat,double *U_N);
+
+	void assemblePDBEwork3D_CSRformat(datModel& o_dat, double* U_N);
+	void assemblePDBEworkQuad4NElement_CSRformat(datModel& o_dat, double* U_N, int conNID[], double xN[][3], double N[], Matrix* mNt, Matrix* Nmat, Matrix* f_mNt, Matrix* f_mNt_Nm, Matrix* f_mNt_Nm_D);
+	void assemblePDBEworkTri3NElement_CSRformat(datModel& o_dat, double* U_N, int conNID[], double xN[][3], Matrix* mNt[], Matrix* mNtN[], Matrix* mNt_N_D);
+	
 	void assemblePDBEwork_CSRformat(datModel& o_dat, double* U_N);
 	void assemblePDBEworkQuad_CSRformat(datModel& o_dat, double* U_N);
 	void assemblePDBEworkTetrahe_CSRformat(datModel& o_dat, double* U_N);
@@ -112,7 +117,8 @@ public:
 	//===================================
 	//==CSR format
 	void calAcceleration(int numEq, double* dp_A);
-	void timeIntegration(datModel& o_dat,Vector * Vu_n,Vector* Vu_nm1,Vector* Vu_np1,int numEq);
+	void timeIntegration_LM(datModel& o_dat,Vector * Vu_n,Vector* Vu_nm1,Vector* Vu_np1,int numEq);//lumped mass;
+	void timeIntegration_NLM(datModel& o_dat,double *dA, Vector* Vu_n, Vector* Vu_nm1, Vector* Vu_np1, int numEq);//Not lumped mass
 	void assembleElemassMatFEM_CSRformat(datModel& o_dat);//CSR ---element mass ;
 	void storeDisplacementResult(datModel& o_dat, Vector* U);
 	void setCSRIndexes_gloMassMat(datModel& o_dat);
@@ -194,7 +200,7 @@ private:
 	////===solver;
 	//int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	//// PD node on the interface, interact with node in fem domain or not
-	//int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
+	//int ci_FENSF; //0-----NO, 1-----YES;
 	//bool cb_InteralForce;
 	////=============END flags=========================
 	//============================================

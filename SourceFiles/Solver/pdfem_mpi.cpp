@@ -24,13 +24,13 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 		ifName = "PDFEMcmd.in";
 	}
 	fin.open(ifName);
-	if (ci_rank==0)
+	if (!fin.is_open())
 	{
-		if (!fin.is_open())
+		if (ci_rank==0)
 		{
-			printf("ERROR: Command file \"%s\" is not exist.\n", ifName);
-			exit(0);
+			printf("ERROR: Command file \"%s\" is not exist.\n", ifName.c_str());
 		}
+		exit(0);
 	}
 	o_files.CMDfile(o_modeldata, fin);
 	fin.close();
@@ -53,7 +53,7 @@ pdfem_mpi::pdfem_mpi(int argc, char* argv[])
 	{
 		double t2 = MPI_Wtime();
 		const char *proName = o_modeldata.cs_title.c_str();
-		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f\n", proName, t2 - t1);
+		printf("Elapsed time of PDLSM-FEM mpi solving of %s is %f s\n", proName, t2 - t1);
 		cout << "PDLSM-FEM program finished." << endl;
 	}
 }

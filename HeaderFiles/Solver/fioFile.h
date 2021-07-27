@@ -30,9 +30,9 @@ public:
 	void CMDfile(datModel& o_dat,ifstream &fin);
 	void excuteCMD(datModel& o_dat, vector<string>& tokens);
 	void writeResults(datModel &o_dat);
-	void writeReslutsTOTAL_vtk(datModel& o_dat,  int nTstep);
-	void writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, int nTstep);
-	void writeReslutsTOTAL_vtk_Binary(datModel& o_dat, int nTstep);
+	void writeReslutsTOTAL_vtk(datModel& o_dat,  string nTstep);
+	void writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, string nTstep);
+	void writeReslutsTOTAL_vtk_Binary(datModel& o_dat, string nTstep);
 private:
 	void writeUofNode(datModel &o_dat);
 	void writeSigofNode(datModel &o_dat);

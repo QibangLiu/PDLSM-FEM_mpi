@@ -6,10 +6,14 @@
 #  MPI_FOUND        - True if mpi found.
 #
 
-find_path(MPI_INCLUDE_DIR mpi.h HINTS $ENV{MPIROOT}/include)
+if(WIN32)
+   find_path(MPI_INCLUDE_DIR mpi.h HINTS $ENV{MPIROOT}/Include)
+elseif(UNIX)
+   find_path(MPI_INCLUDE_DIR mpi.h HINTS $ENV{MPIROOT}/include)
+endif()
 
 if(WIN32)
-    find_library(MPI_LIBRARY NAMES impi.lib  HINTS $ENV{MPIROOT}/lib/debug)
+    find_library(MPI_LIBRARY NAMES msmpi.lib  HINTS $ENV{MPIROOT}/Lib/x64)
 elseif(UNIX)
    find_library(MPI_LIBRARY NAMES libmpi.so  HINTS $ENV{MPIROOT}/lib)
 endif()

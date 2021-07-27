@@ -6,6 +6,7 @@
 #include"pdBlock.h"
 #include"pdGeomP.h"
 #include"pdFamily.h"
+#include"pdfemEleTri3N.h"
 #include "pdfemEleQuad4N.h"
 #include "pdfemEleBrick8N.h"
 #include"pdfemEleTetra4N.h"
@@ -86,7 +87,7 @@ public:
 	string cs_title;
 	string cs_fileName;
 	int ci_Numdimen;
-	int ci_eleType;//element Type;
+	//int ci_eleType;//element Type;
 	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
 						//or pure FE node volume, or family setting, or FE mass
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
@@ -106,24 +107,24 @@ public:
 	int ci_numTstep;
 	int ci_savefrequence;
 	double cd_NLF;//non-local factor;
-	double cd_gamma, cd_beta;
+	double cd_gamma, cd_beta; // for Newmark;
 	//============================================
 	//==============FLAGs ========================
 	//===solver;
 	int ci_solvFlag; // 0---dynamic solver; 1--static solver; 2 ---quasi-static solver;
 	// PD node on the interface, interact with node in fem domain or not
-	int ci_PDBN_ITA_flag; //0-----NO, 1-----YES;
-	/*====failure criterion flags:
-	0--critical stretch; 
-	1--equivalent stress; 
-	2--maximum circumferential tensile stress;
-	3-- maximum principal stress*/
+	bool cb_FENSF; //FE node serve as PD family member or not.
+	/*====failure criterion flags:========
+	Flags: 0-- no fialure allowed;
+	Flags: 1--maximum circumferential tensile stress;
+	Flags: 2-- maximum principal stress.*/
 	int ci_failFlag;
 	bool cb_lumpedMass;
 	int ci_TESflag;//2: 2nd TES, 3:3rd TES
 	bool cb_Newmark;// nNewmark's method.
 	int ci_proType;
 	int ci_topk;
+	double cd_mr, cd_dcf; // for maximum circumferential tensile stress;
 	bool cb_vtkBinary;
 	//=============END flags=========================
 

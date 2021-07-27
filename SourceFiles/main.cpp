@@ -1,7 +1,7 @@
 #include"datModel.h"
 #include<iostream>
 #include<pdfem_mpi.h>
-#include<omp.h>
+//#include<omp.h>
 using namespace std;
 //==some global variables
 calMatrixOperations matoperat;

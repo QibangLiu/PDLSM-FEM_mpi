@@ -42,7 +42,7 @@ ${MKL_LIBRARIES}
 -Wl,--end-group
 ${MPI_LIBRARIES}
 )
-#===set complie options=====================
+#===set compiler options=====================
 if(WIN32)   
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DMKL_ILP64")
 elseif(UNIX)

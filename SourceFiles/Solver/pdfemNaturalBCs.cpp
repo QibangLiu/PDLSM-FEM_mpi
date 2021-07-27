@@ -46,7 +46,23 @@ pdfemEles* pdfemNaturalBCs::op_getNBCsEle(int ele)
 
 void pdfemNaturalBCs::initialEles(int ele, int conNID[],int eleType,dataLev2 *p_datLev2)
 {
-	switch (eleType)
+	if (eleType==2)
+	{
+		cop2_NBCsEle[ele] = new pdfemEleLine2N(ele + 1, conNID, -1, p_datLev2);
+	}
+	else if (eleType == 4)
+	{
+		cop2_NBCsEle[ele] = new pdfemEleQuad4N(ele + 1, conNID, -1, p_datLev2);
+		/*if (conNID[3]!=conNID[2])
+		{
+			
+		}
+		else
+		{
+			cop2_NBCsEle[ele] = new pdfemEleTri3N(ele + 1, conNID, -1, p_datLev2);
+		}*/
+	}
+	/*switch (eleType)
 	{
 	case 2:
 	{
@@ -64,7 +80,6 @@ void pdfemNaturalBCs::initialEles(int ele, int conNID[],int eleType,dataLev2 *p_
 	}
 	default:
 		break;
-	}
-
+	}*/
 }
 

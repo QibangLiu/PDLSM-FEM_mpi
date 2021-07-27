@@ -156,6 +156,32 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 					o_dat.cd_beta= atof(tokens[3].c_str());
 				}
 			}
+			else if (tokens[0] == "FENSF") //setsolver cmd
+			{
+				if (tokens.size() < 2)
+				{
+					if (ci_rank == 0)
+					{
+						printf("Warning: Miss FENSF CMD. Command is ignord. \n");
+						//exit(0);
+					}
+				}
+				else if (tokens[1] == "ON")
+				{
+					o_dat.cb_FENSF = true;
+				}
+				else if (tokens[1] == "OFF")
+				{
+					o_dat.cb_FENSF = false;
+				}
+				else
+				{
+					if (ci_rank == 0)
+					{
+						printf("WARNING: ignore unknown command: \"%s %s\"! \n", tokens[0].c_str(), tokens[1].c_str());
+					}
+				}
+			}
 			else if (tokens[0] == "LUMPMASS") //setsolver cmd
 			{
 				if (tokens.size() < 2)
@@ -309,12 +335,29 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 							printf("Warning: the failure criterion %d is ignored!\n", failFlag);
 						}
 					}
-					else if (failFlag==2&&o_dat.ci_Numdimen!=2)
+					else if (failFlag==1)
 					{
-						if (ci_rank == 0)
+						//Flags: 1--maximum circumferential tensile stress;
+						// may set m_r, d_c;
+						if (ci_rank == 0 && o_dat.ci_Numdimen != 2)
 						{
 							printf("Warning: the maximum circumferential tensile stress failure criterion is for 2D problems!\n", failFlag);
 						}
+						else if (tokens.size()>3)
+						{
+							o_dat.cd_mr = atof(tokens[2].c_str());
+							o_dat.cd_dcf= atof(tokens[3].c_str());
+						}
+						
+					}
+					else if (failFlag == 2)
+					{
+						//#Flags: 2--maximum principal stress.
+						if (tokens.size() > 2)
+						{
+							o_dat.ci_topk = atoi(tokens[2].c_str());
+						}
+						
 					}
 				}
 			}
@@ -329,8 +372,7 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 				}
 				else
 				{
-					int tk = atoi(tokens[1].c_str());
-					o_dat.ci_topk = tk;
+					o_dat.ci_topk = atoi(tokens[1].c_str());
 				}
 			}
 			else if (tokens[0] == "RF")
@@ -424,7 +466,7 @@ void fioFiles::writeResults(datModel &o_dat)
 	//}
 	if (ci_wflag==1)
 	{
-		writeReslutsTOTAL_vtk(o_dat,0);
+		writeReslutsTOTAL_vtk(o_dat,"static");
 	}
 	else if (ci_wflag ==2)
 	{
@@ -433,7 +475,7 @@ void fioFiles::writeResults(datModel &o_dat)
 	}
 	else if (ci_wflag ==3)
 	{
-		writeReslutsTOTAL_vtk(o_dat,0);
+		writeReslutsTOTAL_vtk(o_dat, "static");
 		writeResultsPD_vtk(o_dat);
 		writeResultsFEM_vtk(o_dat);
 		writeUofNode(o_dat);
@@ -506,7 +548,7 @@ void fioFiles::writeSigofNode(datModel &o_dat)
 	fout.close();
 }
 
-void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat,int nTstep)
+void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat, string nTstep)
 {
 	if (o_dat.cb_vtkBinary)
 	{
@@ -518,10 +560,10 @@ void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat,int nTstep)
 	}
 }
 
-void fioFiles::writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, int nTstep)
+void fioFiles::writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, string nTstep)
 {
 	char fileNAME[_MAX_PATH];
-	sprintf(fileNAME, "%s_%d.vtk", cc_fileNAME, nTstep);
+	sprintf(fileNAME, "%s_%s.vtk", cc_fileNAME, nTstep.c_str());
 	ofstream fout(fileNAME);
 	//=============header, title, data type( ASCII or BINARY)============
 	fout << setiosflags(ios::scientific) << setprecision(4);
@@ -592,13 +634,13 @@ void fioFiles::writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, int nTstep)
 	fout.close();
 }
 
-void fioFiles::writeReslutsTOTAL_vtk_Binary(datModel& o_dat, int nTstep)
+void fioFiles::writeReslutsTOTAL_vtk_Binary(datModel& o_dat, string nTstep)
 {
 	/*write results in vtk file with Binary format;
 	vtk using big endian to write binary file;
 	if machine is little endial, swap byte is needed;*/
 	char fileNAME[_MAX_PATH];
-	sprintf(fileNAME, "%s_%d.vtk", cc_fileNAME, nTstep);
+	sprintf(fileNAME, "%s_%s.vtk", cc_fileNAME, nTstep.c_str());
 	ofstream fout(fileNAME, std::ios::binary);
 	//=============header, title, data type( ASCII or BINARY)============
 	fout << setiosflags(ios::scientific) << setprecision(4);

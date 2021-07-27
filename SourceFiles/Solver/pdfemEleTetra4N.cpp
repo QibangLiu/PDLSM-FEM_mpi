@@ -72,26 +72,26 @@ void pdfemEleTetra4N::eleEquivNodalForce(Vector* Fe, double t, double xN[][3])
 void pdfemEleTetra4N::BmatFEM(Matrix* B, double xN[][3])
 {
 	double a[4], b[4], c[4], d[4], mat[3][3];
-	//==a0
-	mat[0][0] = xN[1][0], mat[0][1] = xN[1][1], mat[0][2] = xN[1][2];
-	mat[1][0] = xN[2][0], mat[1][1] = xN[2][1], mat[1][2] = xN[2][2];
-	mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
-	a[0] = detMat33(mat);
-	//a1
-	mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
-	mat[1][0] = xN[2][0], mat[1][1] = xN[2][1], mat[1][2] = xN[2][2];
-	mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
-	a[1] =- detMat33(mat);
-	//a2
-	mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
-	mat[1][0] = xN[1][0], mat[1][1] = xN[1][1], mat[1][2] = xN[1][2];
-	mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
-	a[2] = detMat33(mat);
-	//a3
-	mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
-	mat[1][0] = xN[1][0], mat[1][1] = xN[1][1], mat[1][2] = xN[1][2];
-	mat[2][0] = xN[2][0], mat[2][1] = xN[2][1], mat[2][2] = xN[2][2];
-	a[3] = -detMat33(mat);
+	////==a0
+	//mat[0][0] = xN[1][0], mat[0][1] = xN[1][1], mat[0][2] = xN[1][2];
+	//mat[1][0] = xN[2][0], mat[1][1] = xN[2][1], mat[1][2] = xN[2][2];
+	//mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
+	//a[0] = detMat33(mat);
+	////a1
+	//mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
+	//mat[1][0] = xN[2][0], mat[1][1] = xN[2][1], mat[1][2] = xN[2][2];
+	//mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
+	//a[1] =- detMat33(mat);
+	////a2
+	//mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
+	//mat[1][0] = xN[1][0], mat[1][1] = xN[1][1], mat[1][2] = xN[1][2];
+	//mat[2][0] = xN[3][0], mat[2][1] = xN[3][1], mat[2][2] = xN[3][2];
+	//a[2] = detMat33(mat);
+	////a3
+	//mat[0][0] = xN[0][0], mat[0][1] = xN[0][1], mat[0][2] = xN[0][2];
+	//mat[1][0] = xN[1][0], mat[1][1] = xN[1][1], mat[1][2] = xN[1][2];
+	//mat[2][0] = xN[2][0], mat[2][1] = xN[2][1], mat[2][2] = xN[2][2];
+	//a[3] = -detMat33(mat);
 	//=====b
 	//b0
 	mat[0][0] = 1, mat[0][1] = xN[1][1], mat[0][2] = xN[1][2];
