@@ -1,3 +1,16 @@
+/* ----------------------------------------------------------------------------
+   PDLSM-FEM: Peridynamics least squares minimization-finite element method
+
+   Author: Qibang Liu, qibangliu@ksu.edu
+   Department of mechanical and nuclear engineering, Kansas State University
+
+   Copyright (2021). This software is distributed under
+   the GNU General Public License.
+
+   See the PDLSM-FEM_manual.pdf file in the top-level directory for instructions.
+-------------------------------------------------------------------------------- */
+
+
 #include "datModel.h"
 #include<unordered_set>
 using namespace std;
@@ -79,7 +92,7 @@ void datModel::readdata(ifstream & fin)
 	}
 
 	//====read the element data ==================
-	int Eid, eleNid[8], algoType;
+	int Eid, eleNid[8], algoType, eleNidTetra[4];
 	cop2_Eles = new pdfemEles *[ci_numEle];
 	for (int i = 0; i < ci_numEle; i++)
 	{
@@ -98,7 +111,12 @@ void datModel::readdata(ifstream & fin)
 			else
 			{
 				//4N tetrahedron 
-				cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNid, algoType, cop_datLev2);
+				for (int kk = 0; kk < 3; kk++)
+				{
+					eleNidTetra[kk] = eleNid[kk];
+				}
+				eleNidTetra[3] = eleNid[4];
+				cop2_Eles[i] = new pdfemEleTetra4N(Eid, eleNidTetra, algoType, cop_datLev2);
 			}
 		}
 		else

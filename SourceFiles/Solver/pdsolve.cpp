@@ -1,3 +1,15 @@
+/* ----------------------------------------------------------------------------
+   PDLSM-FEM: Peridynamics least squares minimization-finite element method
+
+   Author: Qibang Liu, qibangliu@ksu.edu
+   Department of mechanical and nuclear engineering, Kansas State University
+
+   Copyright (2021). This software is distributed under
+   the GNU General Public License.
+
+   See the PDLSM-FEM_manual.pdf file in the top-level directory for instructions.
+-------------------------------------------------------------------------------- */
+
 #include "pdsolve.h"
 #include<unordered_set>
 #include<algorithm>
@@ -102,11 +114,35 @@ void pdsolve::setDatModel(datModel& o_dat)
 	if (o_dat.getTotnumFami()!=0)// if not pure FEM
 	{
 		findDomainDimen(o_dat);
+	/*	if (ci_rank==0)
+		{
+			printf("finished findDomainDimen......\n");
+		}*/
 		calVolumeOfNode(o_dat);//mpi
+		/*if (ci_rank == 0)
+		{
+			printf("finished calVolumeOfNode......\n");
+		}*/
 		setDeltaMaxMin(o_dat);//mpi
+		/*if (ci_rank == 0)
+		{
+			printf("finished setDeltaMaxMin......\n");
+		}*/
 		setBlockAndFami(o_dat);//mpi
+		/*if (ci_rank == 0)
+		{
+			printf("finished setBlockAndFami......\n");
+		}*/
 		initialBondState(o_dat);
+		/*if (ci_rank == 0)
+		{
+			printf("finished initialBondState......\n");
+		}*/
 		setNoFailRegion(o_dat);
+		/*if (ci_rank == 0)
+		{
+			printf("finished setNoFailRegion......\n");
+		}*/
 	}
 	
 	if (ci_rank == 0)
@@ -400,6 +436,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 	o_dat.op_getGeomP()->getrtc(rtc);
 	//==initia numblocks;
 	int numBlocks[3];
+
 	for (int i = 0; i < 3; i++)
 	{
 		numBlocks[i] = (rtc[i] - lbc[i]) / blockSize + 1;
@@ -447,7 +484,6 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
 		}
 	}
-	
 	//==allocate element into block; only for 2D quasi-static solver;
 	int AlgoType, * conNID, numNele;
 	double eleCen[3], (*xN)[3], *N;
@@ -462,7 +498,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 				numNele = o_dat.op_getEles(ele)->getNumNodes();
 				conNID = new int[numNele];
 				xN = new double[numNele][3];
-				N = new double[numNele];
+				//N = new double[numNele];
 				o_dat.op_getEles(ele)->getConNid(conNID);
 				//o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
 				for (int n = 0; n < numNele; n++)
@@ -481,8 +517,8 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
 					i_bIndex[2] * numBlocks[0] * numBlocks[1];
 				o_dat.op_getBlock(blockIndex)->putEleInBlock(ele + 1);
-				delete[]conNID, delete[] xN, delete[] N;
-				conNID = NULL, xN = NULL, N = NULL;
+				delete[]conNID, delete[] xN;
+				conNID = NULL, xN = NULL;
 			}
 		}
 	}
@@ -536,7 +572,7 @@ void pdsolve::setBlockAndFami(datModel& o_dat)
 							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
 							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
 								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
-							if (dist > maxDel* maxDel * 1.0e-13 &&( dist < (delta_k* delta_k + maxDel* maxDel * 1.0e-13)|| dist < (delta_j* delta_j + maxDel* maxDel * 1.0e-13)))
+							if (dist > maxDel* maxDel * 1.0e-16 &&( dist < (delta_k* delta_k + maxDel* maxDel * 1.0e-16)|| dist < (delta_j* delta_j + maxDel* maxDel * 1.0e-16)))
 							{
 								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
 							}
@@ -2956,6 +2992,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 	else if (numDime == 3)
 	{
 		//assemblePDBEworkQuad_CSRformat(o_dat, U_N);
+		//assemblePDBEworkTetrahe_CSRformat(o_dat, U_N);
 		/*if (o_dat.ci_eleType==12)
 		{
 			assemblePDBEworkQuad_CSRformat(o_dat,U_N);
@@ -4612,6 +4649,8 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 	}
 	//==set varied prescribed displacemets;
 	setVaryEssentialBC(o_dat);
+	//==set varied NBC (NBC, not prescribed displacemets); 
+	setVaryNaturalBC(o_dat);
 	//====resultant force;
 	unique_ptr<double[]> U_N = make_unique<double[]>(1);
 	calinternalForce_CSRformat(o_dat, numEq, U_N.get());
@@ -4873,6 +4912,8 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 		storeDisplacementResult(o_dat, Vu_n);
 		//==set varied prescribed displacemets;
 		setVaryEssentialBC(o_dat);
+		//==set varied NBC (NBC, not prescribed displacemets); 
+		setVaryNaturalBC(o_dat);
 		//update acceleration for next step;
 		double* tempPointer = Va_n->cdp_vecCoeff;
 		Va_n->cdp_vecCoeff= Va_np1->cdp_vecCoeff;
