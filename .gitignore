@@ -33,6 +33,7 @@
 
 
 #My Added
+examples/
 build/
 .svn/
 *.dat

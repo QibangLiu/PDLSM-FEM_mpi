@@ -3823,12 +3823,18 @@ void pdsolve::timeIntegration_LM(datModel& o_dat,Vector* Vu_n, Vector* Vu_nm1, V
 		tempA = dt * dt * cdp_FGlo[i] / cdp_MGlo[i];
 		Vu_np1->cdp_vecCoeff[i] = Vu_n->cdp_vecCoeff[i] * 2.0 + tempA - Vu_nm1->cdp_vecCoeff[i];
 	}
-	MPI_Bcast(&(Vu_np1->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, ci_rank, MPI_COMM_WORLD);
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		startP = rank * numEq / ci_numProce;
+		endP = (rank + 1) * numEq / ci_numProce;
+		MPI_Bcast(&(Vu_np1->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, rank, MPI_COMM_WORLD);
+	}
+	
 }
 
 void pdsolve::timeIntegration_NLM(datModel& o_dat, double* dA, Vector* Vu_n, Vector* Vu_nm1, Vector* Vu_np1, int numEq)
 {
-	int  startP, endP;
+	int  startP=0, endP=numEq;
 	startP = ci_rank * numEq / ci_numProce;
 	endP = (ci_rank + 1) * numEq / ci_numProce;
 	double tempA;
@@ -3838,7 +3844,12 @@ void pdsolve::timeIntegration_NLM(datModel& o_dat, double* dA, Vector* Vu_n, Vec
 		tempA = dt * dt * dA[i];
 		Vu_np1->cdp_vecCoeff[i] = Vu_n->cdp_vecCoeff[i] * 2.0 + tempA - Vu_nm1->cdp_vecCoeff[i];
 	}
-	MPI_Bcast(&(Vu_np1->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, ci_rank, MPI_COMM_WORLD);
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		startP = rank * numEq / ci_numProce;
+		endP = (rank + 1) * numEq / ci_numProce;
+		MPI_Bcast(&(Vu_np1->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, rank, MPI_COMM_WORLD);
+	}
 }
 
 void pdsolve::assembleElemassMatFEM_CSRformat(datModel& o_dat)
@@ -4600,14 +4611,14 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 	 Va_n--Vector: accerations of (n)th step;*/
 	int saveFren = o_dat.getSaveFreq();
 	int numTstep = o_dat.getnumTstep();
-	double* dp_A = new double[numEq];// accerations, Va_n point to this pointer;
+	//double* dp_A = new double[numEq];// accerations, Va_n point to this pointer;
 	Vector* Vu_nm1, * Vu_n, * Vu_np1, * Va_n;
 	Vu_nm1 = new Vector(numEq);
 	Vu_n = new Vector(numEq);
 	Vu_np1 = new Vector(numEq);
-	Va_n = new Vector();
-	Va_n->setNumRows(numEq);
-	Va_n->setCoeff(dp_A);
+	Va_n = new Vector(numEq);
+	/*Va_n->setNumRows(numEq);
+	Va_n->setCoeff(dp_A);*/
 
 	//=====mass===
 	if (o_dat.cb_lumpedMass)
@@ -4662,14 +4673,14 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 	{
 		for (int i = 0; i < numEq; i++)
 		{
-			dp_A[i] = cdp_FGlo[i] / cdp_MGlo[i];
+			Va_n->cdp_vecCoeff[i] = cdp_FGlo[i] / cdp_MGlo[i];
 		}
 	}
 	else
 	{
 		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
-			cdp_FGlo, dp_A, &comm);
-		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			cdp_FGlo, Va_n->cdp_vecCoeff, &comm);
+		MPI_Bcast(Va_n->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	}
 	//===update displacement and store, u1;
 	matoperat.matMultiply(Va_n, 0.5 * dt * dt, Vu_np1);
@@ -4698,6 +4709,8 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 
 		//==set varied prescribed displacemets;
 		setVaryEssentialBC(o_dat);
+		//==set varied NBC (NBC, not prescribed displacemets); 
+		setVaryNaturalBC(o_dat);
 		//====resultant force;
 		calinternalForce_CSRformat(o_dat, numEq, U_N.get());
 		calExternalForce_CSRformat(o_dat);
@@ -4711,13 +4724,13 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 		{
 			//===solve for acceleration
 			matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_MGlo,
-				cdp_FGlo, dp_A, &comm);
-			MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-			////===updat displacement and store the results;
-			//matoperat.matMultiply(Va_n, dt* dt, Vu_np1); // a*t^2;
-			//matoperat.matAdd(Vu_np1, 2.0, Vu_n, Vu_np1);// 2*U_n+a*t^2;
-			//matoperat.matMinus(Vu_np1, Vu_nm1, Vu_np1);//2*U_n+a*t^2-U_(n-1);
-			timeIntegration_NLM(o_dat,dp_A, Vu_n, Vu_nm1, Vu_np1, numEq);//for not lumed mass;
+				cdp_FGlo, Va_n->cdp_vecCoeff, &comm);
+			MPI_Bcast(Va_n->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			//////===updat displacement and store the results;
+			////matoperat.matMultiply(Va_n, dt* dt, Vu_np1); // a*t^2;
+			////matoperat.matAdd(Vu_np1, 2.0, Vu_n, Vu_np1);// 2*U_n+a*t^2;
+			////matoperat.matMinus(Vu_np1, Vu_nm1, Vu_np1);//2*U_n+a*t^2-U_(n-1);
+			timeIntegration_NLM(o_dat, Va_n->cdp_vecCoeff, Vu_n, Vu_nm1, Vu_np1, numEq);//for not lumed mass;
 		}
 		//==store displacement
 		storeDisplacementResult(o_dat, Vu_np1);
@@ -4740,7 +4753,7 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 	}
 
 	// release memory;
-	delete Vu_nm1, delete Vu_n, delete Vu_np1, delete Va_n; // no need to delete dp_A, if Va_n is deleted;
+	delete Vu_nm1, delete Vu_n, delete Vu_np1, delete Va_n; 
 	Vu_nm1 = NULL, Vu_n = NULL, Vu_np1 = NULL, Va_n = NULL;
 	delete[] cdp_F, delete[] cdp_FGlo, delete[] cdp_MGlo;
 	cdp_F = NULL, cdp_FGlo = NULL, cdp_MGlo = NULL;
@@ -4855,14 +4868,14 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 	 Va_n--Vector: accerations of (n)th step;*/
 	int saveFren = o_dat.getSaveFreq();
 	int numTstep = o_dat.getnumTstep();
-	double* dp_A = new double[numEq];// accerations, Va_np1 point to this pointer;
+	//double* dp_A = new double[numEq];// accerations, Va_np1 point to this pointer;
 	Vector* Vu_n, * Va_n, * Va_np1, * Vv_n;
 	unique_ptr<double[]>U_N = make_unique<double[]>(o_dat.getTotnumNode() * numDime);
 	Vu_n = new Vector(numEq);
 	Va_n = new Vector(numEq);
-	Va_np1 = new Vector();
-	Va_np1->setNumRows(numEq);
-	Va_np1->setCoeff(dp_A);
+	Va_np1 = new Vector(numEq);
+	/*Va_np1->setNumRows(numEq);
+	Va_np1->setCoeff(dp_A);*/
 	Vv_n = new Vector(numEq);
 	//=================initialize 0th step========
 	//============get 0th step displacement;
@@ -4905,8 +4918,8 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 		pdfemAssembleKNFR_CSRformat(o_dat, numEq, Va_n, Vv_n, U_N.get(),n-1); //n=0 is the first step
 		//===solve for acceleration a_np1
 		matoperat.cluster_PARDISO_64Solver(numEq_long, cip_ia, cip_ja, cdp_KuGlo,
-			cdp_FGlo, dp_A, &comm);
-		MPI_Bcast(dp_A, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			cdp_FGlo, Va_np1->cdp_vecCoeff, &comm);
+		MPI_Bcast(Va_np1->cdp_vecCoeff, numEq, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 		//===update displacement and store;
 		updateDispVelo(Vu_n, Vv_n, Va_n, Va_np1, numEq, o_dat);
 		storeDisplacementResult(o_dat, Vu_n);
@@ -5061,9 +5074,12 @@ void pdsolve::pdfemAssembleKNFR_CSRformat(datModel& o_dat, int numEq, Vector* a_
 
 void pdsolve::updateDispVelo(Vector* Vu_n, Vector* Vv_n, Vector* Va_n, Vector* Va_np1, int numEq, datModel& o_dat)
 {
+	int  startP, endP;
+	startP = ci_rank * numEq / ci_numProce;
+	endP = (ci_rank + 1) * numEq / ci_numProce;
 	double temp1, dt, temp2;
 	dt = o_dat.cd_dt;
-	for (int i = 0; i < numEq; i++)
+	for (int i = startP; i < endP; i++)
 	{
 		temp1 = Vu_n->d_getCoeff(i) + dt * Vv_n->d_getCoeff(i) +
 			dt * dt * ((0.5 - cd_beta) * Va_n->d_getCoeff(i) + cd_beta * Va_np1->d_getCoeff(i));
@@ -5071,6 +5087,14 @@ void pdsolve::updateDispVelo(Vector* Vu_n, Vector* Vv_n, Vector* Va_n, Vector* V
 		Vu_n->setCoeff(i, temp1);//update displacement;
 		Vv_n->setCoeff(i, temp2);//update velocity;
 	}
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		startP = rank * numEq / ci_numProce;
+		endP = (rank + 1) * numEq / ci_numProce;
+		MPI_Bcast(&(Vu_n->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, rank, MPI_COMM_WORLD);
+		MPI_Bcast(&(Vv_n->cdp_vecCoeff[startP]), endP - startP, MPI_DOUBLE, rank, MPI_COMM_WORLD);
+	}
+	
 }
 
 void pdsolve::printArr(double* V, int numEq, ofstream& fout)
