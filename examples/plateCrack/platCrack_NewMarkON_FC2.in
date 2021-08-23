@@ -1,0 +1,40 @@
+# mesh file, include boundary conditions; the first CMD must be MSHFILE
+MSHFILE platCrack.lis
+#solver, DYNAMIC, STATIC, QUASI-STATIC
+SOLVER DYNAMIC
+# set solving for dynamic solver, for static solver, these cmd will be ignored
+# the order is: Keyword, time incremental, total time step, write results frequency, horizon factor, non-local factor;
+SETSOLVING 5e-7 1100  20  4  1.0
+# Newmark's method: ON or OFF; for dynamic solver; default is OFF;
+NEWMARK ON
+#FENSF ON/OFF; default is ON, FE node serve as PD family members or not.
+# For dynamic solving, we suggest to set it ON; for quasi/-static solving, it may only affect solving time cost, we suggest to set it OFF;
+FENSF ON
+# lumped mass: ON or OFF; for explicit dynamic solver; default is OFF:
+#LUMPMASS ON
+# reset essential boundary condition;
+# the order is: Keyword, ID, value. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
+EBC 0  0e-5
+EBC 1  0e-5
+# varing essential boundary condition; 
+# the order is: Keyword, ID, velocity. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
+VEBC 0 -1e0
+VEBC 1  1e0
+# reset natural BC; 
+# the order is: Keyword, ID, value. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
+#NBC 0  1e6
+# varing natural boundary condtion;
+# the order is: Keyword, ID, velocity. The ID is 0, 1 ..., which is correspond to the NBC in mesh file.
+#VNBC 0 4e6
+# Failure Criterion flags: Keyword (FC) flag;
+#Flags: 0-- no fialure allowed;
+#Flags: 1--maximum circumferential tensile stress;
+#Flags: 2-- maximum principal stress.
+#FC 1 mr dcf, ( mr, dcf are optional)
+#the mr is to determins the integral path of J-integra, default is 6.0;  dcf is determine crack grow amount, default is 1.0
+#FC 2 TopK, TopK represents the number of k bonds with the largest value will be handled fail; k==0 means no limitation.
+FC 2 0
+# calculate total reaction force: keyword, ID0, ID1, ID2.... The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
+RF 1
+#write vtk file with format BINARY or ASCII; default is BINARY;
+#VTKFORMAT ASCII
