@@ -9,9 +9,12 @@ tags:
 authors:
   - name: Qibang Liu
     orcid: 0000-0001-7935-7907
+    affiliation: 1
   - name: X.J. Xin
+    affiliation: 1
 affiliations:
  - name: Department of Mechanical and Nuclear Engineering, Kansas State University, Manhattan, Kansas, USA
+   index:1
 date: 22 August 2021
 bibliography: paper.bib
 ---
