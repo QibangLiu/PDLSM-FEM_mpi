@@ -14,7 +14,7 @@ authors:
     affiliation: 1
 affiliations:
  - name: Department of Mechanical and Nuclear Engineering, Kansas State University, Manhattan, Kansas, USA
-   index:1
+   index: 1
 date: 22 August 2021
 bibliography: paper.bib
 ---
