@@ -45,7 +45,6 @@ build/
 *.disp
 *.out
 *.sig
-*.lis
 *.exp
 *.ilk
 *.res
