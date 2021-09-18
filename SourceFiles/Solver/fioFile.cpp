@@ -458,31 +458,6 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 
 void fioFiles::writeResults(datModel &o_dat)
 {
-	//struct stat info;
-	//char s_path[_MAX_PATH];
-	//getcwd(s_path, _MAX_PATH);
-	//sprintf(s_path, "%s/Results", s_path);
-	//int i_stat=stat(s_path, &info);
-	//if (info.st_mode & S_IFDIR)  // S_ISDIR() doesn't exist on my windows 
-	//{
-	//	//printf("%s is a directory\n", s_path);
-	//	if (i_stat != 0&&ci_rank==0)
-	//	{
-	//		printf("%s is a directory but cannot access.\n", s_path);
-	//	}
-	//}
-	//else
-	//{
-	//	if (ci_rank==0)
-	//	{
-	//		printf("%s is no exist, and made it automaticly.\n", s_path);
-	//	}
-	//	#ifdef __linux__
-	//		mkdir(s_path, 777); 
-	//	#else
-	//		mkdir(s_path);
-	//	#endif
-	//}
 	if (ci_wflag==1)
 	{
 		writeReslutsTOTAL_vtk(o_dat,"static");
@@ -497,8 +472,6 @@ void fioFiles::writeResults(datModel &o_dat)
 		writeReslutsTOTAL_vtk(o_dat, "static");
 		writeResultsPD_vtk(o_dat);
 		writeResultsFEM_vtk(o_dat);
-		writeUofNode(o_dat, "static");
-		writeSigofNode(o_dat, "static");
 	}
 	
 
@@ -572,11 +545,12 @@ void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat, string nTstep)
 	if (o_dat.cb_vtkBinary)
 	{
 		writeReslutsTOTAL_vtk_Binary(o_dat, nTstep);
-		writeSigofNode(o_dat, nTstep);
 	}
 	else
 	{
 		writeReslutsTOTAL_vtk_ASCII(o_dat, nTstep);
+		writeSigofNode(o_dat, nTstep);
+		writeUofNode(o_dat, nTstep);
 	}
 }
 
