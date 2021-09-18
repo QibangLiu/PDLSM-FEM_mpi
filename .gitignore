@@ -33,7 +33,9 @@
 
 
 #My Added
+examples/
 build/
+BranchBuild/
 .svn/
 *.dat
 .vs/
@@ -45,6 +47,7 @@ build/
 *.disp
 *.out
 *.sig
+*.lis
 *.exp
 *.ilk
 *.res
