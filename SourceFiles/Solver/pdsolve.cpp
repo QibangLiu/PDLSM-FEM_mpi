@@ -6468,6 +6468,7 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	if (ci_rank == 0)
 	{
 		fout.open(RFfilename);
+		fout << std::left << setiosflags(ios::scientific) << setprecision(4);
 		fout << "Step\t" << "U\t" << "RFx\t" << "RFy\t" << "RFz\n";
 	}
 	//===============================
@@ -6491,10 +6492,15 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	Vdu = new Vector(numEq);
 	int comm = MPI_Comm_c2f(MPI_COMM_WORLD);
 	ofstream cracPathout;
-	cracPathout.open(o_dat.cs_fileName + "_cp.out");
 	//===============start quasi-static solving==========
 	if (ci_rank == 0)
 	{
+		cracPathout.open(o_dat.cs_fileName + "_cp.out");
+		cracPathout << std::left << setiosflags(ios::scientific) << setprecision(4);
+		if (o_dat.ci_failFlag == 1)
+		{
+			cracPathout << "crack ID\t tip_x\t tip_y \t KI \tKII \t Keq\n";
+		}
 		printf("start to quasi-static solving......\n");
 	}
 	//============get initial step displacement;
@@ -6574,7 +6580,12 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	delete[] cdp_Ku, delete[]cdp_KuGlo;
 	cip_ia = NULL; cip_ja = NULL, cdp_F = NULL, cdp_FGlo = NULL;
 	cdp_Ku = NULL, cdp_KuGlo = NULL;
-	fout.close();
+	
+	if (ci_rank==0)
+	{
+		cracPathout.close();
+		fout.close();
+	}
 }
 
 double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream& cracPath)
@@ -7423,7 +7434,7 @@ bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath
 		Keq = cos(0.5 * theta_c) * (KI * cos(0.5 * theta_c) * cos(0.5 * theta_c) - 1.5 * KII * sin(theta_c));
 		KEQ = Keq;
 		// you may uncomment here to see value;
-		if (ci_rank==0/*&&o_dat.ci_solvFlag==2*/)
+		if (ci_rank==0&&o_dat.ci_solvFlag==1)
 		{
 			printf("KI= %e, KII=%e, Keq=%e\n", KI, KII, Keq);
 		}
@@ -7457,21 +7468,26 @@ bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath
 			if (ip_startPropage[ck])
 			{
 				// you may uncomment here to see value;
-				if (ci_rank == 0 && o_dat.ci_solvFlag == 2)
-				{
-					printf("Xtip =( %e, %e),  XnewTip = (%e, %e) \n", o_dat.cdp_crack[ck][0][0], o_dat.cdp_crack[ck][0][1], o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1]);
-				}
+				//if (ci_rank == 0 && o_dat.ci_solvFlag == 2)
+				//{
+				//	//printf("Xtip =( %e, %e),  XnewTip = (%e, %e) KI= %e, KII=%e, Keq=%e\n", o_dat.cdp_crack[ck][0][0], o_dat.cdp_crack[ck][0][1], o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1], KI, KII, Keq);
+				//}
 				updateBondstate(o_dat.cdp_crack[ck], o_dat);
 			}
 		}
 	}
 
-	// output file path to file
-	for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
+	if (ci_rank==0)
 	{
-		cracPath << o_dat.cdp_crack[ck][1][0] << "\t" << o_dat.cdp_crack[ck][1][1] << "\t";
+		// output file path to file
+		
+		for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
+		{
+			cracPath << ck << "\t" << o_dat.cdp_crack[ck][1][0] << "\t" << o_dat.cdp_crack[ck][1][1] << "\t" << KI << "\t" << KII << "\t" << Keq << " \"***\"\t";
+		}
+		cracPath << endl;
 	}
-	cracPath << endl;
+	
 
 	delete[] ip_startPropage;
 	ip_startPropage = NULL;
