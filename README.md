@@ -4,7 +4,7 @@ in 2D and 3D by MPI technique. This solver is written in a C++ environment on cr
 dynamic, and implicit dynamic solvers for structure analysis under displacement or traction loading. 
 
   - `Pre-process` - It requires a mesh data file with the specified format. Users may use commercial finite element codes such as ANSYS, ABAQUS to generate the mesh data file.  
-  - `Solver` - PDLSM-FEM includes implicit and explicit solvers. For implicit solvers, it stores the large sparse matrix in a compressed sparse row (CSR) format and solvers the large linear systems of equations by the Parallel Direct Sparse Solver (PDSS) of [Intel Math Kernel Library](https://software.intel.com/content/www/us/en/develop/tools/oneapi/base-toolkit/download.html?operatingsystem=window&distributions=webdownload&options=offline).
+  - `Solver` - PDLSM-FEM includes implicit and explicit solvers. For implicit solvers, it stores the large sparse matrix in a compressed sparse row (CSR) format and solves the large linear systems of equations by the Parallel Direct Sparse Solver (PDSS) of [Intel Math Kernel Library](https://software.intel.com/content/www/us/en/develop/tools/oneapi/base-toolkit/download.html?operatingsystem=window&distributions=webdownload&options=offline).
 
   - `Post-process` - It stores the results in VTK format, which can be visualized directly by [Paraview](https://www.paraview.org/).
 
