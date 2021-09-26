@@ -21,7 +21,7 @@ bibliography: paper.bib
 
 # Summary
 
-'PDLSM-FEM solver' is a parallel implementation of coupled peridynamics least squares minimization and finite element method (PDLSM-FEM) in 2D and 3D by MPI technique. This solver is written in a C++ environment on cross platforms (Windows, Linux). It includes implicit static, explicit dynamic, and implicit dynamic solvers for structure analysis under displacement or traction loading. PDLSM-FEM solver stores the large sparse matrix in a compressed sparse row (CSR) format rather than a full matrix format, and solves the large linear systems of equations by the Parallel Direct Sparse Solver (PDSS) of Intel Math Kernel Library (MKL). It writes the results in VTK format, which can be directly and easily visualized by Paraview.
+'PDLSM-FEM solver' is a parallel implementation of coupled peridynamics least squares minimization and finite element method (PDLSM-FEM) in 2D and 3D by MPI technique. This solver is written in a C++ environment on cross platforms (Windows, Linux). It includes implicit static, explicit dynamic, and implicit dynamic solvers for structure analysis under displacement or traction loading. PDLSM-FEM solver stores the large sparse matrix in a compressed sparse row (CSR) format rather than a full matrix format, and solves the large linear systems of equations by the Parallel Direct Sparse Solver (PDSS) of [Intel Math Kernel Library](https://software.intel.com/content/www/us/en/develop/tools/oneapi/base-toolkit/download.html?operatingsystem=window&distributions=webdownload&options=offline). It writes the results in VTK format, which can be directly and easily visualized by [Paraview](https://www.paraview.org/).
 
 # Statement of need
 
