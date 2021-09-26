@@ -13,9 +13,9 @@ elseif(UNIX)
 endif()
 
 if(WIN32)
-    find_library(MPI_LIBRARY NAMES msmpi.lib  HINTS $ENV{MPIROOT}/Lib/x64)
+   find_library(MPI_LIBRARY NAMES msmpi.lib  HINTS $ENV{MPIROOT}/Lib/x64)
 elseif(UNIX)
-   find_library(MPI_LIBRARY NAMES libmpi.so  HINTS $ENV{MPIROOT}/lib)
+   find_library(MPI_LIBRARY NAMES libmpi.so  HINTS $ENV{MPIROOT}/lib $ENV{MPIROOT}/lib/release)
 endif()
 
 set(MPI_LIBRARIES ${MPI_LIBRARY})
