@@ -78,8 +78,8 @@ public:
 	void setNumBlocs(int numBlocks[]);
 	//==families====
 	int getTotnumFami()const;
-	/*void SetNumFamilies(int numFami);
-	void allocaMemoryFami();*/
+	void SetNumFamilies(int numFami);
+	void allocaMemoryFami();
 
 	void setEssentialBC(int id, double val);
 
@@ -88,17 +88,10 @@ public:
 	string cs_fileName;
 	int ci_Numdimen;
 	//int ci_eleType;//element Type;
-	//===============updated PD && FE data=====================
-	vector<int>civ_CracEleIDX;//element intersect with crack;
-	int ci_oldNumCracEle;
 	vector<int>civ_feIDX;// finite elements' Index ;//for SED assembling and FE stress; 
 						//or pure FE node volume, or family setting, or FE mass
 	vector<int>civ_pdeIDX;//PD elements' Index; for PD node volume only; cleared after volume calculated;
-	int ci_oldNumPDE;
-	int ci_oldNumPDNode;
-	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function
-	vector<pdFamily*>cpv_FamiOfNode;//store family data
-	bool cb_ERupdate;// Eriched region updated or not;
+	vector<int>civ_pdNodeIDX;// PD node Index; for family setting and Max min delta;initial in set PD node function;
 	//====for reaction force=========================
 	vector<int>civ_reacForceOfessBCId;
 	vector<int>civ_reaForceNID;
@@ -115,7 +108,6 @@ public:
 	int ci_savefrequence;
 	double cd_NLF;//non-local factor;
 	double cd_gamma, cd_beta; // for Newmark;
-	double cd_me;
 	//============================================
 	//==============FLAGs ========================
 	//===solver;
@@ -139,9 +131,6 @@ public:
 	//=========NO fail===========
 	int ci_numNOFAILnode;
 	int *cip_NOFailNode;
-	//================================================
-	pdPDBEs** cop2_PDBE;
-	int ci_numPDBEs;
 private:
 	datModel(const datModel&);// never using copy constructor;
 	string cs_label;
@@ -150,12 +139,13 @@ private:
 	int ci_numVaryEssenBC;
 	int ci_numNode;//number of material points
 	int ci_numEle;
+	int ci_numPDBEs;
 	int ci_numNaturalBCs;//traction
 	int ci_numEssentialBCs;// Displacement
 	int ci_numReaForceNode;
 	int ci_numPointBCs;// node force;
 	int ci_numBlocks[3];//total number of  block in X direction
-	//int ci_numFami;
+	int ci_numFami;
 
 
 
@@ -166,14 +156,13 @@ private:
 	pdfemEles** cop2_Eles;//store element data
 	pdfemNaturalBCs **cop2_NaturalBC;
 	pdBlock **cop2_Block;//store block data
-	//pdFamily **cop2_FamiOfNode;//store family data
-	
+	pdFamily **cop2_FamiOfNode;//store family data
 	pdGaussPt **cop_Gauss;
 	pdfemEssentialBCs** cop2_EssenBCs;
 	pdVaryEssentialBCs **cop2_VaryessentialBC;
 	pdPointBC** cop2_pointBC;
 	pdReactionForceNode** cop2_ReaForceNode;
-	
+	pdPDBEs **cop2_PDBE;
 	
 
 	

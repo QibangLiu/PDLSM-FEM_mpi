@@ -13,7 +13,6 @@ public:
 	bool cb_varing;// this ebc is varing or not, during dynamic solving
 	double cd_velocity;// velocity during dynamic solving;
 	double cd_value;
-	double cd_maxV;// maximum velocity;
 private:
 	pdfemEssentialBCs();
 	int ci_numNODE;

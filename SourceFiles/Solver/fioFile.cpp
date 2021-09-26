@@ -122,7 +122,7 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 			}
 			else if (tokens[0] == "SETSOLVING") //setsolver cmd
 			{
-				if (tokens.size() < 7)
+				if (tokens.size() < 6)
 				{
 					if (ci_rank == 0)
 					{
@@ -132,15 +132,10 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 				else
 				{
 					o_dat.cd_dt = atof(tokens[1].c_str());
-					if (o_dat.ci_solvFlag==2)
-					{
-						o_dat.cd_dt = 1;
-					}
 					o_dat.ci_numTstep= atoi(tokens[2].c_str());
 					o_dat.ci_savefrequence= atoi(tokens[3].c_str());
 					o_dat.op_getGeomP()->cd_factor= atof(tokens[4].c_str());
 					o_dat.cd_NLF = atof(tokens[5].c_str());
-					o_dat.cd_me= atof(tokens[6].c_str());
 				}
 			}
 			else if (tokens[0] == "NEWMARK") //setsolver cmd
@@ -244,7 +239,6 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 						velo = atof(tokens[2].c_str());
 						o_dat.op_getEssenBC(ID)->cb_varing = true;
 						o_dat.op_getEssenBC(ID)->cd_velocity = velo;
-						o_dat.op_getEssenBC(ID)->cd_maxV = velo;
 					}
 					else if (ci_rank==0)
 					{
@@ -458,6 +452,31 @@ void fioFiles::excuteCMD(datModel& o_dat, vector<string>& tokens)
 
 void fioFiles::writeResults(datModel &o_dat)
 {
+	//struct stat info;
+	//char s_path[_MAX_PATH];
+	//getcwd(s_path, _MAX_PATH);
+	//sprintf(s_path, "%s/Results", s_path);
+	//int i_stat=stat(s_path, &info);
+	//if (info.st_mode & S_IFDIR)  // S_ISDIR() doesn't exist on my windows 
+	//{
+	//	//printf("%s is a directory\n", s_path);
+	//	if (i_stat != 0&&ci_rank==0)
+	//	{
+	//		printf("%s is a directory but cannot access.\n", s_path);
+	//	}
+	//}
+	//else
+	//{
+	//	if (ci_rank==0)
+	//	{
+	//		printf("%s is no exist, and made it automaticly.\n", s_path);
+	//	}
+	//	#ifdef __linux__
+	//		mkdir(s_path, 777); 
+	//	#else
+	//		mkdir(s_path);
+	//	#endif
+	//}
 	if (ci_wflag==1)
 	{
 		writeReslutsTOTAL_vtk(o_dat,"static");
@@ -472,16 +491,18 @@ void fioFiles::writeResults(datModel &o_dat)
 		writeReslutsTOTAL_vtk(o_dat, "static");
 		writeResultsPD_vtk(o_dat);
 		writeResultsFEM_vtk(o_dat);
+		writeUofNode(o_dat);
+		writeSigofNode(o_dat);
 	}
 	
 
 }
 
 
-void fioFiles::writeUofNode(datModel &o_dat, string nTstep)
+void fioFiles::writeUofNode(datModel &o_dat)
 {
 	char fileNAME[_MAX_PATH];
-	sprintf(fileNAME, "%s_%s.disp", cc_fileNAME, nTstep.c_str());
+	sprintf(fileNAME, "%s.disp", cc_fileNAME);
 	ofstream fout(fileNAME);
 	fout << "*****The final displacement of  point*****" << endl;
 	fout << std::left;
@@ -520,10 +541,10 @@ bool fioFiles::is_little_endian()
 	return (c.b == 1);
 }
 
-void fioFiles::writeSigofNode(datModel &o_dat, string nTstep)
+void fioFiles::writeSigofNode(datModel &o_dat)
 {
 	char fileNAME[_MAX_PATH];
-	sprintf(fileNAME,"%s_%s.sig", cc_fileNAME, nTstep.c_str());
+	sprintf(fileNAME,"%s.sig", cc_fileNAME);
 	ofstream fout(fileNAME);
 	fout << "*****The stress of  point*****" << endl;
 	fout << std::left;
@@ -549,8 +570,6 @@ void fioFiles::writeReslutsTOTAL_vtk(datModel &o_dat, string nTstep)
 	else
 	{
 		writeReslutsTOTAL_vtk_ASCII(o_dat, nTstep);
-		writeSigofNode(o_dat, nTstep);
-		writeUofNode(o_dat, nTstep);
 	}
 }
 
@@ -637,7 +656,7 @@ void fioFiles::writeReslutsTOTAL_vtk_Binary(datModel& o_dat, string nTstep)
 	sprintf(fileNAME, "%s_%s.vtk", cc_fileNAME, nTstep.c_str());
 	ofstream fout(fileNAME, std::ios::binary);
 	//=============header, title, data type( ASCII or BINARY)============
-	//fout << setiosflags(ios::scientific) << setprecision(4);
+	fout << setiosflags(ios::scientific) << setprecision(4);
 	fout << "# vtk DataFile Version 3.0" << endl;
 	fout << o_dat.cs_title << endl;
 	fout << "BINARY" << endl;

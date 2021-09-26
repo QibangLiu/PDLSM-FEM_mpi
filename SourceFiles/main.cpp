@@ -21,7 +21,6 @@ using namespace std;
 calMatrixOperations matoperat;
 pdGaussPt o_globGP(2);
 pdGaussPt o_sigGP(2);// this GP is for stress extraplation;
-pdGaussPt o_sifGP(4);// this GP is for SIFs calculation;
 int main(int argc, char* argv[])
 {
 	//omp_set_num_threads(4);

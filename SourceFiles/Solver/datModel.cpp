@@ -20,16 +20,10 @@ datModel::datModel()
 	cop_Gauss[0] = new pdGaussPt(2);
 	cop_Gauss[1] = new pdGaussPt(5);
 	//=====inital data=====
-	cop2_PDBE = NULL;
 	cop2_Block = NULL;
-	//cop2_FamiOfNode = NULL;
-	cb_ERupdate = false;
 	cop_datLev2 = new dataLev2();
 	ci_numCrack = 0;
-	//ci_numFami = 0;
-	ci_oldNumPDE = 0;
-	ci_oldNumPDNode = 0;
-	ci_oldNumCracEle = 0;
+	ci_numFami = 0;
 	cd_NLF = 0.33;
 	cd_dt = 1.0;
 	ci_numTstep = 1;
@@ -38,11 +32,10 @@ datModel::datModel()
 	cd_beta = 0.25;
 	cd_mr = 6.0;
 	cd_dcf = 1.0;
-	cd_me = 0;
 	//=====initial flages;
 	ci_topk = 0;
 	ci_solvFlag = -1;
-	cb_FENSF = true;//must be true for Eriched fem-PD
+	cb_FENSF = true;
 	ci_failFlag = 0;
 	cb_lumpedMass = false;
 	ci_TESflag = 2;
@@ -104,7 +97,6 @@ void datModel::readdata(ifstream & fin)
 	for (int i = 0; i < ci_numEle; i++)
 	{
 		fin >> Eid >> algoType;
-		//algoType = 2;
 		if (ci_Numdimen==3)
 		{
 			for (int j = 0; j < 8; j++)
@@ -146,33 +138,13 @@ void datModel::readdata(ifstream & fin)
 		}
 		
 	}
-	////=============read PD boundary================
-	//string s_blank;
-	//getline(fin, s_blank);
-	//getline(fin, s_blank);
-	//int bNid[4], tn=0;
-	//fin >> ci_numPDBEs;
-	//cop2_PDBE = new pdPDBEs*[ci_numPDBEs];
-	//if (ci_Numdimen==3)
-	//{
-	//	tn = 4;
-	//}
-	//else if (ci_Numdimen == 2)
-	//{
-	//	tn = 2;
-	//}
-	//for (int i = 0; i < ci_numPDBEs; i++)
-	//{
-	//	for (int j = 0; j < tn; j++)
-	//	{
-	//		fin >> bNid[j];
-	//	}
-	//	cop2_PDBE[i] = new pdPDBEs(bNid, tn);
-	//}
-	//=========read the boundry condition=========
-	//=====read essensital BCs;
+	//=============read PD boundary================
 	string s_blank;
-	int tn=0;
+	getline(fin, s_blank);
+	getline(fin, s_blank);
+	int bNid[4], tn=0;
+	fin >> ci_numPDBEs;
+	cop2_PDBE = new pdPDBEs*[ci_numPDBEs];
 	if (ci_Numdimen==3)
 	{
 		tn = 4;
@@ -181,6 +153,16 @@ void datModel::readdata(ifstream & fin)
 	{
 		tn = 2;
 	}
+	for (int i = 0; i < ci_numPDBEs; i++)
+	{
+		for (int j = 0; j < tn; j++)
+		{
+			fin >> bNid[j];
+		}
+		cop2_PDBE[i] = new pdPDBEs(bNid, tn);
+	}
+	//=========read the boundry condition=========
+	//=====read essensital BCs;
 	getline(fin, s_blank);
 	getline(fin, s_blank);
 	fin >> ci_numEssentialBCs;
@@ -370,9 +352,9 @@ void datModel::writeData()
 	fout << setw(12) << "Family ID" << setw(13) << "Number of Node"
 		<< setw(18) << " ** ID of NODE" <<  endl;
 	
-	for (int i = 0; i < cpv_FamiOfNode.size(); i++)
+	for (int i = 0; i < ci_numFami; i++)
 	{
-		cpv_FamiOfNode[i]->printNODE(fout);
+		cop2_FamiOfNode[i]->printNODE(fout);
 		
 	}
 	fout.close();
@@ -397,37 +379,36 @@ int datModel::getTotnumReacForcNode() const
 
 int datModel::getTotnumFami() const
 {
-	//return ci_numFami;
-	return cpv_FamiOfNode.size();
+	return ci_numFami;
 }
 
-//void datModel::SetNumFamilies(int numFami)
-//{
-//	ci_numFami = numFami;
-//}
+void datModel::SetNumFamilies(int numFami)
+{
+	ci_numFami = numFami;
+}
 
-//void datModel::allocaMemoryFami()
-//{
-//	/*allocate memory for famlilys*/
-//	cop2_FamiOfNode = new pdFamily * [ci_numFami];
-//	//double fac = cop_geomp->getFactor();
-//	//int nd;
-//	//double delta_k;
-//	for (int famk = 0; famk < ci_numFami; famk++)
-//	{
-//		cop2_FamiOfNode[famk] = new pdFamily();
-//		cop2_FamiOfNode[famk]->setID(famk + 1);
-//		/*nd = civ_pdNodeIDX[famk];
-//		delta_k = fac * pow((cop2_Node[nd]->getvolume()), 1.0 / ci_Numdimen);
-//		cop2_FamiOfNode[famk]->sethorizon(delta_k);*/
-//
-//	}
-//	if (cop2_FamiOfNode == NULL)
-//	{
-//		cout << "Error in memory allocation for families." << endl;
-//		exit(0);
-//	}
-//}
+void datModel::allocaMemoryFami()
+{
+	/*allocate memory for famlilys*/
+	cop2_FamiOfNode = new pdFamily * [ci_numFami];
+	//double fac = cop_geomp->getFactor();
+	//int nd;
+	//double delta_k;
+	for (int famk = 0; famk < ci_numFami; famk++)
+	{
+		cop2_FamiOfNode[famk] = new pdFamily();
+		cop2_FamiOfNode[famk]->setID(famk + 1);
+		/*nd = civ_pdNodeIDX[famk];
+		delta_k = fac * pow((cop2_Node[nd]->getvolume()), 1.0 / ci_Numdimen);
+		cop2_FamiOfNode[famk]->sethorizon(delta_k);*/
+
+	}
+	if (cop2_FamiOfNode == NULL)
+	{
+		cout << "Error in memory allocation for families." << endl;
+		exit(0);
+	}
+}
 
 void datModel::setEssentialBC(int id,double val)
 {
@@ -518,8 +499,7 @@ void datModel::deleteBLOCK()
 
 pdFamily * datModel::op_getFami(int famk)
 {
-	//return cop2_FamiOfNode[famk];
-	return cpv_FamiOfNode.at(famk);
+	return cop2_FamiOfNode[famk];
 }
 
 pdNode * datModel::op_getNode(int N)
@@ -624,16 +604,15 @@ void datModel::writeLocalDamage(ofstream & fout)
 	//cal phi
 	int numNodeOfFam, NID_k;
 	double tempDam, locaDama;
-	int sz = cpv_FamiOfNode.size();
-	for (int k = 0; k < sz; k++)
+	for (int k = 0; k < ci_numFami; k++)
 	{
 
 		tempDam = 0;
-		numNodeOfFam = cpv_FamiOfNode[k]->getNumNode();
-		NID_k = cpv_FamiOfNode[k]->getNodeID(0);
+		numNodeOfFam = cop2_FamiOfNode[k]->getNumNode();
+		NID_k = cop2_FamiOfNode[k]->getNodeID(0);
 		for (int m = 0; m < numNodeOfFam; m++)
 		{
-			tempDam = tempDam + cpv_FamiOfNode[k]->getbondstate(m);
+			tempDam = tempDam + cop2_FamiOfNode[k]->getbondstate(m);
 		}
 		locaDama = 1.0 - tempDam / numNodeOfFam;
 		
@@ -684,7 +663,6 @@ void datModel::setReacForcNode()
 	}
 	civ_reaForceNID.assign(reaForNID.begin(), reaForNID.end());
 	reaForNID.clear();
-	//int count = 0;
 	if (!civ_reaForceNID.empty())
 	{
 		//sort
@@ -705,10 +683,6 @@ void datModel::setReacForcNode()
 					break;
 				}
 			}
-			/*if (count>1)
-			{
-				reaForceEle.push_back(ele);
-			}*/
 			delete[] conNId;
 			conNId = NULL;
 		}

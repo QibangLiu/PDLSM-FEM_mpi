@@ -34,8 +34,8 @@ public:
 	void writeReslutsTOTAL_vtk_ASCII(datModel& o_dat, string nTstep);
 	void writeReslutsTOTAL_vtk_Binary(datModel& o_dat, string nTstep);
 private:
-	void writeUofNode(datModel &o_dat, string nTstep);
-	void writeSigofNode(datModel &o_dat, string nTstep);
+	void writeUofNode(datModel &o_dat);
+	void writeSigofNode(datModel &o_dat);
 	void writeResultsPD_vtk(datModel &o_dat);
 	void writeResultsFEM_vtk(datModel& o_dat);
 	void setTitle(datModel &o_dat);
