@@ -17,6 +17,7 @@ pdFamily::pdFamily()
 	cd_delta = 0;
 	ci_famID = 0;
 	cb_allowFail = true;
+	cd_v = 0;
 }
 
 pdFamily::~pdFamily()

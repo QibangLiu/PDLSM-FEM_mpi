@@ -54,7 +54,7 @@ public:
 	// algorithm type, 1 is for PD, 2 is traditional FEM;
 	//-1 is NBCs elements
 	int ci_eleType;
-
+	double cd_V;
 	dataLev2* cop_datLev2;
 private:
 	pdfemEles();
