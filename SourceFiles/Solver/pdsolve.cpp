@@ -15,6 +15,7 @@
 #include<algorithm>
 extern calMatrixOperations matoperat;
 extern pdGaussPt o_globGP;
+extern pdGaussPt o_sifGP;
 const double PI = acos(-1.);
 pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 {
@@ -26,6 +27,7 @@ pdsolve::pdsolve(datModel & o_dat,int rank,int numProce)
 	cop_Ku = NULL; cop_F = NULL;
 	cip_ia = NULL, cip_ja = NULL, cdp_F = NULL, cdp_Ku = NULL, cdp_Ug = NULL, cdp_M = NULL;
 	cdp_FGlo = NULL, cdp_KuGlo = NULL;
+	cvp_inteNode = NULL;
 	//initial parameters for Newmark's method
 	cd_gamma = o_dat.cd_gamma;
 	cd_beta = o_dat.cd_beta;
@@ -96,6 +98,17 @@ pdsolve::~pdsolve()
 {
 	delete cop_D;
 	cop_D = NULL;
+
+	for (auto iter = cpv_pdbe.begin(); iter != cpv_pdbe.end(); ++iter)
+	{
+		if (*iter != nullptr)
+		{
+			delete[](*iter);
+			(*iter) = nullptr;
+		}
+	}
+	delete[] cvp_inteNode;
+	cvp_inteNode = NULL;
 }
 
 void pdsolve::setDatModel(datModel& o_dat)
@@ -108,42 +121,28 @@ void pdsolve::setDatModel(datModel& o_dat)
 	}
 
 	// below is order dependent;
-	setFEID_PDEID(o_dat);
-	Setdof_Index(o_dat);
-	setPDNODEandnumFami(o_dat);
-	if (o_dat.getTotnumFami()!=0)// if not pure FEM
-	{
-		findDomainDimen(o_dat);
-	/*	if (ci_rank==0)
-		{
-			printf("finished findDomainDimen......\n");
-		}*/
-		calVolumeOfNode(o_dat);//mpi
-		/*if (ci_rank == 0)
-		{
-			printf("finished calVolumeOfNode......\n");
-		}*/
-		setDeltaMaxMin(o_dat);//mpi
-		/*if (ci_rank == 0)
-		{
-			printf("finished setDeltaMaxMin......\n");
-		}*/
-		setBlockAndFami(o_dat);//mpi
-		/*if (ci_rank == 0)
-		{
-			printf("finished setBlockAndFami......\n");
-		}*/
-		initialBondState(o_dat);
-		/*if (ci_rank == 0)
-		{
-			printf("finished initialBondState......\n");
-		}*/
-		setNoFailRegion(o_dat);
-		/*if (ci_rank == 0)
-		{
-			printf("finished setNoFailRegion......\n");
-		}*/
-	}
+	Setdof_Index( o_dat);
+	setDeltaMaxMin_EleV_NV( o_dat);// find out the max and min Delta. Got ele volume and  node volume
+	findDomainDimen( o_dat);// get the domain dimension size;
+	setBlock( o_dat);// allocate memory for block, and put elements and elements into block;
+	initializePDE_FE( o_dat);//judge FE and PDE, then put the idx into vector, based on intersection between element and crack;
+	updatePDBE( o_dat);//update PDBE and assign the pointers, based on the civ_pdeIDX;
+	UpdateNodeType( o_dat);
+	initialPDN_Fami( o_dat);//put the PD node idx into civ_pdNodeIDX, set nodes' famyID, set numFami, allocaMemory for familyies, cal PD node volume
+	initialBondState( o_dat);
+	//setDeltaMaxMin(o_dat);//mpi
+	//setFEID_PDEID(o_dat);
+	//updatePDBE(o_dat);
+	//Setdof_Index(o_dat);
+	//setPDNODEandnumFami(o_dat);
+	//if (o_dat.getTotnumFami()!=0)// if not pure FEM
+	//{
+	//	findDomainDimen(o_dat);
+	//	calVolumeOfNode(o_dat);//mpi
+	//	setBlockAndFami(o_dat);//mpi
+	//	initialBondState(o_dat);
+	//	setNoFailRegion(o_dat);
+	//}
 	
 	if (ci_rank == 0)
 	{
@@ -195,61 +194,49 @@ void pdsolve::findDomainDimen(datModel& o_dat)
 	o_dat.op_getGeomP()->setRTC(rtcGlo);
 }
 
-void pdsolve::setPDNODEandnumFami(datModel& o_dat)
-{
-	//====maybe MPI parallize future; or omp parallize;
-	int algoType, * conNID, numNele;
-	//for PD element
-	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
-	{
-		algoType = o_dat.op_getEles(ele)->getAlgoType();
-		numNele = o_dat.op_getEles(ele)->getNumNodes();
-		if (algoType == 1)
-		{
-			conNID = new int[numNele];
-			o_dat.op_getEles(ele)->getConNid(conNID);
-			for (int i = 0; i < numNele; i++)
-			{
-				o_dat.op_getNode(conNID[i] - 1)->setNodeType(2);
-			}
-			delete[] conNID; conNID = NULL;
-		}
-	}
-	//for FE
-	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
-	{
-		algoType = o_dat.op_getEles(ele)->getAlgoType();
-		numNele = o_dat.op_getEles(ele)->getNumNodes();
-		if (algoType == 2)
-		{
-			conNID = new int[numNele];
-			o_dat.op_getEles(ele)->getConNid(conNID);
-			for (int i = 0; i < numNele; i++)
-			{
-				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType()==2)
-				{
-					o_dat.op_getNode(conNID[i] - 1)->setNodeType(1);
-				}
-				
-			}
-			delete[] conNID; conNID = NULL;
-		}
-	}
-	/*====get pd node list and the number====*/
-	/*Caution: also set the node famyID here*/
-	int numFami = 0;
-	for (int k = 0; k < o_dat.getTotnumNode(); k++)
-	{
-		if (o_dat.op_getNode(k)->getNodeType())
-		{
-			numFami = numFami + 1;
-			o_dat.civ_pdNodeIDX.push_back(k);
-			o_dat.op_getNode(k)->setFamID(numFami);
-		}
-	}
-	o_dat.SetNumFamilies(numFami);
-	o_dat.allocaMemoryFami();
-}
+//void pdsolve::setPDNODEandnumFami(datModel& o_dat)
+//{
+//	//====maybe MPI parallize future; or omp parallize;
+//	int algoType, * conNID, numNele, ele;
+//	//for PD element
+//	for (auto iter = o_dat.civ_pdeIDX.begin(); iter!= o_dat.civ_pdeIDX.end(); iter++)
+//	{
+//		ele = *iter;
+//		algoType = o_dat.op_getEles(ele)->getAlgoType();
+//		numNele = o_dat.op_getEles(ele)->getNumNodes();
+//		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+//		for (int i = 0; i < numNele; i++)
+//		{
+//			o_dat.op_getNode(conNID[i] - 1)->setNodeType(2);
+//		}
+//	}
+//	
+//	//for PDBE
+//	for (int pdbe = 0; pdbe < o_dat.ci_numPDBEs; pdbe++)
+//	{
+//		numNele = o_dat.cop2_PDBE[pdbe]->i_getNumnode();
+//		conNID = o_dat.cop2_PDBE[pdbe]->ci_nodeID;
+//		for (int i = 0; i < numNele; i++)
+//		{
+//			o_dat.op_getNode(conNID[i] - 1)->setNodeType(1);
+//		}
+//	}
+//	
+//	/*====get pd node list and the number====*/
+//	/*Caution: also set the node famyID here*/
+//	int numFami = 0;
+//	for (int k = 0; k < o_dat.getTotnumNode(); k++)
+//	{
+//		if (o_dat.op_getNode(k)->getNodeType())
+//		{
+//			numFami = numFami + 1;
+//			o_dat.civ_pdNodeIDX.push_back(k);
+//			o_dat.op_getNode(k)->setFamID(numFami);
+//		}
+//	}
+//	/*o_dat.SetNumFamilies(numFami);
+//	o_dat.allocaMemoryFami();*/
+//}
 
 void pdsolve::Setdof_Index(datModel& o_dat)
 {
@@ -280,135 +267,149 @@ void pdsolve::Setdof_Index(datModel& o_dat)
 	}
 }
 
-void pdsolve::calVolumeOfNode(datModel& o_dat)
-{
-	
-	/*MPI parallized*/
-	//====initiallize;
-	int numNode = o_dat.getTotnumNode();
-	double* loc_V = new double[numNode];
-	double* glo_V = new double[numNode];
-	//#pragma omp parallel for
-	for (int i = 0; i < numNode; i++)
-	{
-		loc_V[i] = 0;
-		glo_V[i] = 0;
-	}
-	//=======
-	int totNumPDE, startP, endP;
-	totNumPDE = o_dat.civ_pdeIDX.size();
-	startP = ci_rank * totNumPDE / ci_numProce;
-	endP = (ci_rank + 1) * totNumPDE / ci_numProce;
-	//======
-	int* conNID, numNodeELE, ele;
-	double(*xN)[3], VolEle=0;
-	for (int pde = startP; pde < endP; pde++)
-	{
-		
-		ele = o_dat.civ_pdeIDX[pde];
-		numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
-		conNID = new int[numNodeELE];
-		xN = new double[numNodeELE][3];
-		o_dat.op_getEles(ele)->getConNid(conNID);
-		for (int i = 0; i < numNodeELE; i++)
-		{
-			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-		}
-		//Gauss integration to get element volumn
-		VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
-		for (int i = 0; i < numNodeELE; i++)
-		{
-			//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
-			loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
-		}
-		delete[] conNID, delete[] xN;
-		conNID = NULL, xN = NULL;
-		
-	}
-	if (o_dat.cb_FENSF==true)
-	{
-		int totNumFE;
-		totNumFE = o_dat.civ_feIDX.size();
-		startP = ci_rank * totNumFE / ci_numProce;
-		endP = (ci_rank + 1) * totNumFE / ci_numProce;
-		for (int fe = startP; fe < endP; fe++)
-		{
-			ele= o_dat.civ_feIDX[fe];
-			numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
-			conNID = new int[numNodeELE];
-			xN = new double[numNodeELE][3];
-			o_dat.op_getEles(ele)->getConNid(conNID);
-			for (int i = 0; i < numNodeELE; i++)
-			{
-				o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
-			}
-			//Gauss integration to get element volumn
-			VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
-			for (int i = 0; i < numNodeELE; i++)
-			{
-				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 0)
-				{
-					//only for pure fem node;
-					//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
-					loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
-				}
-			}
-			delete[] conNID, delete[] xN;
-			conNID = NULL, xN = NULL;
-			
-		}
-	}
-	MPI_Allreduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-	for (int i = 0; i < numNode; i++)
-	{
-		o_dat.op_getNode(i)->setVolume(glo_V[i]);
-	}
-	//==release memory;
-	delete[] loc_V, delete[] glo_V;
-	loc_V = NULL; glo_V = NULL;
-	o_dat.civ_pdeIDX.clear();
+//void pdsolve::calVolumeOfNode(datModel& o_dat)
+//{
+//	
+//	/*MPI parallized*/
+//	//====initiallize;
+//	int numNode = o_dat.getTotnumNode();
+//	double* loc_V = new double[numNode] {0};
+//	double* glo_V = new double[numNode] {0};
+//	//=======
+//	int totNumPDE, startP, endP;
+//	totNumPDE = o_dat.civ_pdeIDX.size();
+//	startP = ci_rank * totNumPDE / ci_numProce;
+//	endP = (ci_rank + 1) * totNumPDE / ci_numProce;
+//	//======
+//	int* conNID, numNodeELE, ele;
+//	double(*xN)[3], VolEle=0;
+//	for (int pde = startP; pde < endP; pde++)
+//	{
+//		
+//		ele = o_dat.civ_pdeIDX[pde];
+//		numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
+//		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+//		/*conNID = new int[numNodeELE];
+//		xN = new double[numNodeELE][3];
+//		o_dat.op_getEles(ele)->getConNid(conNID);
+//		for (int i = 0; i < numNodeELE; i++)
+//		{
+//			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+//		}*/
+//		//Gauss integration to get element volumn
+//		//VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+//		VolEle = o_dat.op_getEles(ele)->cd_V;
+//		for (int i = 0; i < numNodeELE; i++)
+//		{
+//			//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
+//			loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
+//		}
+//		//delete[] conNID, delete[] xN;
+//		conNID = NULL, xN = NULL;
+//	}
+//	if (o_dat.cb_FENSF==true)
+//	{
+//		int totNumFE;
+//		totNumFE = o_dat.civ_feIDX.size();
+//		startP = ci_rank * totNumFE / ci_numProce;
+//		endP = (ci_rank + 1) * totNumFE / ci_numProce;
+//		for (int fe = startP; fe < endP; fe++)
+//		{
+//			ele= o_dat.civ_feIDX[fe];
+//			numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
+//			conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+//			//conNID = new int[numNodeELE];
+//			//xN = new double[numNodeELE][3];
+//			//o_dat.op_getEles(ele)->getConNid(conNID);
+//			//for (int i = 0; i < numNodeELE; i++)
+//			//{
+//			//	o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+//			//}
+//			////Gauss integration to get element volumn
+//			//VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+//			VolEle = o_dat.op_getEles(ele)->cd_V;
+//			for (int i = 0; i < numNodeELE; i++)
+//			{
+//				if (o_dat.op_getNode(conNID[i] - 1)->getNodeType() == 0)
+//				{
+//					//only for pure fem node;
+//					//o_dat.op_getNode(conNID[i] - 1)->addvolume(VolEle / numNodeELE);
+//					loc_V[conNID[i] - 1] = loc_V[conNID[i] - 1] + VolEle / numNodeELE;
+//				}
+//			}
+//			//delete[] conNID, delete[] xN;
+//			conNID = NULL, xN = NULL;
+//			
+//		}
+//	}
+//	MPI_Allreduce(loc_V, glo_V, numNode, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+//	for (int i = 0; i < numNode; i++)
+//	{
+//		o_dat.op_getNode(i)->setVolume(glo_V[i]);
+//	}
+//	//==release memory;
+//	delete[] loc_V, delete[] glo_V;
+//	loc_V = NULL; glo_V = NULL;
+//
+//	//==set horizon of PD NODE;
+//	double fac = o_dat.op_getGeomP()->getFactor();
+//	int nd, numDime = o_dat.ci_Numdimen;
+//	double delta_k;
+//	int numFami = o_dat.getTotnumFami();
+//	for (int famk = 0; famk < numFami; famk++)
+//	{
+//		nd = o_dat.civ_pdNodeIDX[famk];
+//		delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDime);
+//		o_dat.op_getFami(famk)->sethorizon(delta_k);
+//	}
+//}
 
-	//==set horizon of PD NODE;
-	double fac = o_dat.op_getGeomP()->getFactor();
-	int nd, numDime = o_dat.ci_Numdimen;
-	double delta_k;
-	int numFami = o_dat.getTotnumFami();
-	for (int famk = 0; famk < numFami; famk++)
-	{
-		nd = o_dat.civ_pdNodeIDX[famk];
-		delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDime);
-		o_dat.op_getFami(famk)->sethorizon(delta_k);
-	}
-}
-
-void pdsolve::setDeltaMaxMin(datModel& o_dat)
+void pdsolve::setDeltaMaxMin_EleV_NV(datModel& o_dat)
 {
+	// calculate element volumn and find the max and min element size;
 	double volume_max, volume_min, dv, minDelta, maxDelta, gloVmax, gloVmin;
 	//====initialize==
 	volume_max = -(numeric_limits<double>::max());
 	volume_min = numeric_limits<double>::max();
 	gloVmax = volume_max;
 	gloVmin = volume_min;
-	int totNumPDN, startP, endP, nd;
-	totNumPDN = o_dat.civ_pdNodeIDX.size();
-	startP = ci_rank * totNumPDN / ci_numProce;
-	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
-	//======find out max min volumn;
-	for (int k = startP; k < endP; k++)
+	int totNumEle, startP, endP;
+	totNumEle = o_dat.getTotnumEle();
+	startP = ci_rank * totNumEle / ci_numProce;
+	endP = (ci_rank + 1) * totNumEle / ci_numProce;
+	//======got volumn find out max min volumn;
+	double* loc_V = new double[totNumEle] {0};
+	double* glo_V = new double[totNumEle] {0};
+	int numNode = o_dat.getTotnumNode();
+	double* loc_NV = new double[numNode] {0};
+	double* glo_NV = new double[numNode] {0};
+	int numNodeELE, * conNID;
+	double(*xN)[3], VolEle = 0;
+	for (int ele = startP; ele < endP; ele++)
 	{
-		//if (o_dat.op_getNode(i)->getNodeType())
+		numNodeELE = o_dat.op_getEles(ele)->ci_numNodes;
+		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+		xN = new double[numNodeELE][3];
+		for (int i = 0; i < numNodeELE; i++)
 		{
-			nd = o_dat.civ_pdNodeIDX[k];
-			dv = o_dat.op_getNode(nd)->getvolume();
-			if (dv > volume_max)
-			{
-				volume_max = dv;
-			}
-			if (dv < volume_min)
-			{
-				volume_min = dv;
-			}
+			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
 		}
+		//Gauss integration to get element volumn
+		loc_V[ele] = o_dat.op_getEles(ele)->eleVolume(xN);
+		dv = loc_V[ele];
+		for (int i = 0; i < numNodeELE; i++)
+		{
+			loc_NV[conNID[i] - 1] = loc_NV[conNID[i] - 1] + dv / numNodeELE;
+		}
+		if (dv > volume_max)
+		{
+			volume_max = dv;
+		}
+		if (dv < volume_min)
+		{
+			volume_min = dv;
+		}
+		delete[] xN;
 	}
 	MPI_Reduce(&volume_max, &gloVmax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 	MPI_Reduce(&volume_min, &gloVmin, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
@@ -422,198 +423,103 @@ void pdsolve::setDeltaMaxMin(datModel& o_dat)
 	MPI_Bcast(&maxDelta, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	o_dat.op_getGeomP()->setMinDelta(minDelta);
 	o_dat.op_getGeomP()->setMaxDelta(maxDelta);
+	//store volume;
+	MPI_Allreduce(loc_V, glo_V, totNumEle, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	for (int ele = 0; ele < totNumEle; ele++)
+	{
+		o_dat.op_getEles(ele)->cd_V = glo_V[ele];
+	}
+	MPI_Allreduce(loc_NV, glo_NV, numNode, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	for (int i = 0; i < numNode; i++)
+	{
+		o_dat.op_getNode(i)->setVolume(glo_NV[i]);
+	}
+	delete[] loc_V, delete[] glo_V;
+	delete[] loc_NV, delete[] glo_NV;
 }
 
-void pdsolve::setBlockAndFami(datModel& o_dat)
+void pdsolve::setBlock(datModel& o_dat)
 {
 	//=============================set blocks======================
-	double fac, maxDelta, blockSize, lbc[3], rtc[3];
+	double fac, minDelta, blockSize, lbc[3], rtc[3];
 	fac = o_dat.op_getGeomP()->getFactor();
-	maxDelta = o_dat.op_getGeomP()->getmaxDelta();
-	blockSize = cd_blockFac * fac * maxDelta;
+	minDelta = o_dat.op_getGeomP()->getminDelta();
+	blockSize = cd_blockFac * fac * minDelta;
 	o_dat.op_getGeomP()->setBlockSize(blockSize);
 	o_dat.op_getGeomP()->getlbc(lbc);
 	o_dat.op_getGeomP()->getrtc(rtc);
 	//==initia numblocks;
 	int numBlocks[3];
-
 	for (int i = 0; i < 3; i++)
 	{
 		numBlocks[i] = (rtc[i] - lbc[i]) / blockSize + 1;
 	}
-	if (o_dat.ci_Numdimen==2)
+	if (o_dat.ci_Numdimen == 2)
 	{
 		numBlocks[2] = 1;
 	}
 	o_dat.setNumBlocs(numBlocks);
 	o_dat.allocaMemoryBLock();
-	//===allocate Nodes into block
-	int blockIndex, i_bIndex[3];
-	double xnode[3];
-	if (o_dat.cb_FENSF==false)
-	{
-		for (int k = 0; k < o_dat.getTotnumNode(); k++)
-		{
-			//only pd node;
-			if (o_dat.op_getNode(k)->getNodeType())
-			{
-				o_dat.op_getNode(k)->getcoor(xnode);
-				for (int i = 0; i < 3; i++)
-				{
-					i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
-				}
-				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
-					i_bIndex[2] * numBlocks[0] * numBlocks[1];
-				o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
-			}
-		}
-	}
-	else
-	{
-		for (int k = 0; k < o_dat.getTotnumNode(); k++)
-		{
-			// all node;
-			o_dat.op_getNode(k)->getcoor(xnode);
-			for (int i = 0; i < 3; i++)
-			{
-				i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
-			}
-			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
-				i_bIndex[2] * numBlocks[0] * numBlocks[1];
 
-			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
-		}
-	}
 	//==allocate element into block; only for 2D quasi-static solver;
-	int AlgoType, * conNID, numNele;
-	double eleCen[3], (*xN)[3], *N;
-	if (o_dat.ci_solvFlag==2&&o_dat.ci_Numdimen==2)
+	int * conNID, numNele;
+	double eleCen[3], (*xN)[3];
+	int blockIndex, i_bIndex[3];
+	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
 	{
-		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+		//eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
+		numNele = o_dat.op_getEles(ele)->getNumNodes();
+		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+		xN = new double[numNele][3];
+		o_dat.op_getEles(ele)->getConNid(conNID);
+		for (int n = 0; n < numNele; n++)
 		{
-			AlgoType = o_dat.op_getEles(ele)->getAlgoType();
-			if (AlgoType == 1)
-			{
-				//eleCen[0] = 0; eleCen[1] = 0; eleCen[2] = 0;
-				numNele = o_dat.op_getEles(ele)->getNumNodes();
-				conNID = new int[numNele];
-				xN = new double[numNele][3];
-				//N = new double[numNele];
-				o_dat.op_getEles(ele)->getConNid(conNID);
-				//o_dat.op_getEles(ele)->shapeFunction(N, 0, 0, 0);
-				for (int n = 0; n < numNele; n++)
-				{
-					o_dat.op_getNode(conNID[n] - 1)->getcoor(xN[n]);
-					/*for (int i = 0; i < 3; i++)
-					{
-						eleCen[i] = eleCen[i] + xN[n][i] * N[n];
-					}*/
-				}
-				o_dat.op_getEles(ele)->eleCenter(eleCen, xN);
-				for (int i = 0; i < 3; i++)
-				{
-					i_bIndex[i] = (eleCen[i] - lbc[i]) / blockSize;
-				}
-				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
-					i_bIndex[2] * numBlocks[0] * numBlocks[1];
-				o_dat.op_getBlock(blockIndex)->putEleInBlock(ele + 1);
-				delete[]conNID, delete[] xN;
-				conNID = NULL, xN = NULL;
-			}
+			o_dat.op_getNode(conNID[n] - 1)->getcoor(xN[n]);
 		}
-	}
-
-	//===============set families===============================
-	/*===parallize===*/
-	int totNumPDN, startP, endP, nd;
-	totNumPDN = o_dat.civ_pdNodeIDX.size();
-	startP = ci_rank * totNumPDN / ci_numProce;
-	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
-	/*startP = 0;
-	endP = totNumPDN;*/
-	//=====
-	double delta_k, delta_j, maxDel;
-	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
-	double dist;//distance between MPx, cx
-	int numNodeoB, NodeIDoB, numDimen; 
-	numDimen = o_dat.ci_Numdimen;
-	maxDel = o_dat.op_getGeomP()->getmaxDelta();
-	//int countFam = 0;
-	for (int famk = startP; famk < endP; famk++)
-	{
-		nd = o_dat.civ_pdNodeIDX[famk];
-		//delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDimen);
-		delta_k = o_dat.op_getFami(famk)->gethorizon();
-		o_dat.op_getNode(nd)->getcoor(cx);
-		o_dat.op_getFami(famk)->putNodeIntoFami(nd + 1);
-		//set fam ID of node; moved to setPDNODEandnumFami()function;
-		//o_dat.op_getNode(nd)->setFamID(famk + 1);
+		o_dat.op_getEles(ele)->eleCenter(eleCen, xN);
 		for (int i = 0; i < 3; i++)
 		{
-			i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
+			i_bIndex[i] = (eleCen[i] - lbc[i]) / blockSize;
 		}
-		for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
-		{
-			for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
-			{
-				for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
-				{
-					if (xIdex >= 0 && xIdex < (numBlocks[0]) &&
-						yIdex >= 0 && yIdex < (numBlocks[1]) &&
-						zIdex >= 0 && zIdex < (numBlocks[2]))
-					{
-						blockIndex = xIdex + yIdex * numBlocks[0] +
-							zIdex * numBlocks[0] * numBlocks[1];
-						numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
-						for (int ii = 0; ii < numNodeoB; ii++)
-						{
-							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
-							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
-							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
-							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
-								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
-							if (dist > maxDel* maxDel * 1.0e-16 &&( dist < (delta_k* delta_k + maxDel* maxDel * 1.0e-16)|| dist < (delta_j* delta_j + maxDel* maxDel * 1.0e-16)))
-							{
-								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
-							}
-						}
-					}
-				}
-			}
-		}
-		
+		blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+			i_bIndex[2] * numBlocks[0] * numBlocks[1];
+		o_dat.op_getBlock(blockIndex)->putEleInBlock(ele + 1);
+		delete[] xN; xN = NULL;
 	}
-	//==== sent and receive data;
-	int LocSP, LocEP;
-	int* numNDofFam = new int[totNumPDN];
-	for (int rank = 0; rank < ci_numProce; rank++)
+	double xnode[3];
+	for (int k = 0; k < o_dat.getTotnumNode(); k++)
 	{
-		LocSP = rank * totNumPDN / ci_numProce;
-		LocEP = (rank + 1) * totNumPDN / ci_numProce;
-		for (int famk = LocSP; famk < LocEP; famk++)
+		// all node;
+		o_dat.op_getNode(k)->getcoor(xnode);
+		for (int i = 0; i < 3; i++)
 		{
-			//==== sent and receive data;
-			numNDofFam[famk] = o_dat.op_getFami(famk)->civ_NID.size();
-			MPI_Bcast(&(numNDofFam[famk]), 1, MPI_INT, rank, MPI_COMM_WORLD);
-			o_dat.op_getFami(famk)->civ_NID.resize(numNDofFam[famk]);
-			MPI_Bcast(&(o_dat.op_getFami(famk)->civ_NID[0]), numNDofFam[famk],
-				MPI_INT, rank, MPI_COMM_WORLD);
+			i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
 		}
-	}
-	//release memory;
-	delete[]numNDofFam; numNDofFam = NULL;
-	o_dat.civ_pdNodeIDX.clear();
-	//initial bond state;
-	for (int k = 0; k < o_dat.getTotnumFami(); k++)
-	{
-		o_dat.op_getFami(k)->initialBondState();
+		blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+			i_bIndex[2] * numBlocks[0] * numBlocks[1];
+		o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
 	}
 }
 
-void pdsolve::setFEID_PDEID(datModel& o_dat)
+void pdsolve::initializePDE_FE(datModel& o_dat)
 {
+	o_dat.ci_oldNumPDE = 0;
 	int totNumEle, algoType;
 	totNumEle = o_dat.getTotnumEle();
+	for (int ele = 0; ele < totNumEle; ele++)
+	{
+		algoType = o_dat.op_getEles(ele)->getAlgoType();
+		if (algoType == 1)
+		{
+			o_dat.civ_pdeIDX.push_back(ele);
+		}
+	}
+	int numCrac =o_dat.ci_numCrack;
+	for (int cidx = 0; cidx < numCrac; cidx++)
+	{
+		updatePDEbyCrack(o_dat.cdp_crack[cidx], o_dat);
+	}
+	o_dat.civ_feIDX.clear();
 	for (int ele = 0; ele < totNumEle; ele++)
 	{
 		algoType = o_dat.op_getEles(ele)->getAlgoType();
@@ -621,20 +527,439 @@ void pdsolve::setFEID_PDEID(datModel& o_dat)
 		{
 			o_dat.civ_feIDX.push_back(ele);
 		}
-		else if (algoType==1)
-		{
-			o_dat.civ_pdeIDX.push_back(ele);
-		}
-		else
-		{
-			printf("Error: Element algorithem type must be 1 or 2.\n");
-			exit(0);
-		}
 	}
 }
 
+void pdsolve::updatePDEbyCrack(double crack[][3], datModel& o_dat)
+{
+	// //update PDE and volume;
+	int numCrac = o_dat.ci_numCrack;
+	if (numCrac == 0)
+	{
+		return;
+	}
+	int numDime = o_dat.ci_Numdimen;
+	int fn = 0;
+	if (numDime == 3)
+	{
+		fn = 3;
+	}
+	else if (numDime == 2)
+	{
+		fn = 2;
+	}
+	else
+	{
+		printf("It is must be 2D or 3D problem.\n");
+		exit(0);
+	}
+	double blockSize, lbc[3], temp[3];
+	double Xmin[3], Xmax[3];
+	int i_bIndexMin[3], i_bIndexMax[3], numBlocks[3], blockIndex, numEleOfB, eleID;
+	o_dat.op_getGeomP()->getlbc(lbc);
+	blockSize = o_dat.op_getGeomP()->getBlockSize();
+	o_dat.getNumOfBLock(numBlocks);
+	for (int kk = 0; kk < 3; kk++)
+	{
+		temp[0] = crack[0][kk];
+		temp[1] = crack[1][kk];
+		temp[2] = crack[2][kk];
+		Xmin[kk] = *min_element(temp, temp + fn);
+		Xmax[kk] = *max_element(temp, temp + fn);
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		i_bIndexMin[i] = (Xmin[i] - lbc[i]) / blockSize;
+		i_bIndexMax[i] = (Xmax[i] - lbc[i]) / blockSize;
+	}
+	if (numDime == 2)
+	{
+		i_bIndexMin[2] = 0;
+		i_bIndexMax[2] = 0;
+	}
+	o_dat.ci_oldNumCracEle = o_dat.civ_CracEleIDX.size();
+	for (int xIdex = i_bIndexMin[0] - 1; xIdex < i_bIndexMax[0] + 2; xIdex++)
+	{
+		for (int yIdex = i_bIndexMin[1] - 1; yIdex < i_bIndexMax[1] + 2; yIdex++)
+		{
+			for (int zIdex = i_bIndexMin[2] - 1; zIdex < i_bIndexMax[2] + 2; zIdex++)
+			{
+				if (xIdex >= 0 && xIdex < (numBlocks[0]) && yIdex >= 0 && yIdex < (numBlocks[1]) && zIdex >= 0 && zIdex < (numBlocks[2]))
+				{
+					blockIndex = xIdex + yIdex * numBlocks[0] + zIdex * numBlocks[0] * numBlocks[1];
+					numEleOfB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+					for (int e = 0; e < numEleOfB; e++)
+					{
+						eleID = o_dat.op_getBlock(blockIndex)->getEleoB(e);
+						//if (o_dat.op_getEles(eleID-1)->ci_algorithmType==2)
+						{
+							if (b_eleIntersectCrack(eleID,crack,o_dat)&& !(find(o_dat.civ_CracEleIDX.begin(), o_dat.civ_CracEleIDX.end(), eleID - 1) != (o_dat.civ_CracEleIDX.end())))
+							{
+								/*o_dat.op_getEles(eleID - 1)->ci_algorithmType = 1;
+								o_dat.civ_pdeIDX.push_back(eleID - 1);*/
+								o_dat.civ_CracEleIDX.push_back(eleID - 1);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	int updateSize = o_dat.civ_CracEleIDX.size();
+	double* X, * Y, *Z;
+	int sizeArra = updateSize - o_dat.ci_oldNumCracEle;
+	X = new double[sizeArra];
+	Y = new double[sizeArra];
+	Z = new double[sizeArra];
+	double xC[3]{ 0 }, (*xN)[3], dis;
+	int* conNid, numN, count = 0;
+	for (int i = o_dat.ci_oldNumCracEle; i < updateSize; i++)
+	{
+		numN = o_dat.op_getEles(o_dat.civ_CracEleIDX.at(i))->ci_numNodes;
+		xN = new double[numN][3];
+		conNid = o_dat.op_getEles(o_dat.civ_CracEleIDX.at(i))->cip_EleNodeId;
+		for (int j = 0; j < numN; j++)
+		{
+			o_dat.op_getNode(conNid[j] - 1)->getcoor(xN[j]);
+		}
+		o_dat.op_getEles(o_dat.civ_CracEleIDX.at(i))->eleCenter(xC, xN);
+		X[count] = xC[0]; Y[count] = xC[1]; Z[count] = xC[2];
+		count++;
+	}
+	Xmin[0] = *min_element(X, X + sizeArra);
+	Xmin[1] = *min_element(Y, Y + sizeArra);
+	Xmin[2] = *min_element(Z, Z + sizeArra);
+	Xmax[0] = *max_element(X, X + sizeArra);
+	Xmax[1] = *max_element(Y, Y + sizeArra);
+	Xmax[2] = *max_element(Z, Z + sizeArra);
+	for (int i = 0; i < 3; i++)
+	{
+		i_bIndexMin[i] = (Xmin[i] - lbc[i]) / blockSize;
+		i_bIndexMax[i] = (Xmax[i] - lbc[i]) / blockSize;
+	}
+	double m = o_dat.cd_me + 1e-15;
+	double Rsq = o_dat.op_getGeomP()->getminDelta() * o_dat.op_getGeomP()->getminDelta() * m * m;
+	for (int xIdex = i_bIndexMin[0] - 1; xIdex < i_bIndexMax[0] + 2; xIdex++)
+	{
+		for (int yIdex = i_bIndexMin[1] - 1; yIdex < i_bIndexMax[1] + 2; yIdex++)
+		{
+			for (int zIdex = i_bIndexMin[2] - 1; zIdex < i_bIndexMax[2] + 2; zIdex++)
+			{
+				if (xIdex >= 0 && xIdex < (numBlocks[0]) && yIdex >= 0 && yIdex < (numBlocks[1]) && zIdex >= 0 && zIdex < (numBlocks[2]))
+				{
+					blockIndex = xIdex + yIdex * numBlocks[0] + zIdex * numBlocks[0] * numBlocks[1];
+					numEleOfB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+					for (int e = 0; e < numEleOfB; e++)
+					{
+						eleID = o_dat.op_getBlock(blockIndex)->getEleoB(e);
+						if (o_dat.op_getEles(eleID - 1)->ci_algorithmType == 2)
+						{
+							numN = o_dat.op_getEles(eleID - 1)->ci_numNodes;
+							xN = new double[numN][3];
+							conNid = o_dat.op_getEles(eleID - 1)->cip_EleNodeId;
+							for (int i = 0; i < numN; i++)
+							{
+								o_dat.op_getNode(conNid[i] - 1)->getcoor(xN[i]);
+							}
+							o_dat.op_getEles(eleID - 1)->eleCenter(xC, xN);
+							for (int i = 0; i < sizeArra; i++)
+							{
+								dis = (xC[0] - X[i]) * (xC[0] - X[i]) + (xC[1] - Y[i]) * (xC[1] - Y[i]) + (xC[2] - Z[i]) * (xC[2] - Z[i]);
+								if (dis < Rsq)
+								{
+									o_dat.op_getEles(eleID - 1)->ci_algorithmType = 1;
+									o_dat.civ_pdeIDX.push_back(eleID - 1);
+									break;
+								}
+							}
+							delete[] xN;
+						}
+					}
+				}
+			}
+		}
+	}
+	delete[] X, delete[] Y, delete[] Z;
+	/*for (int i = 0; i < 3; i++)
+	{
+		i_bIndexMin[i] = (crack[1][i] - lbc[i]) / blockSize;
+	}
+	double xC[3]{ 0 }, (*xN)[3], dis;
+	int* conNid, numN;
+	double m = 1;
+	double Rsq = o_dat.op_getGeomP()->getminDelta() * o_dat.op_getGeomP()->getminDelta() * m*m;
+	for (int xIdex = i_bIndexMin[0] - 1; xIdex < i_bIndexMin[0] + 2; xIdex++)
+	{
+		for (int yIdex = i_bIndexMin[1] - 1; yIdex < i_bIndexMin[1] + 2; yIdex++)
+		{
+			for (int zIdex = i_bIndexMin[2] - 1; zIdex < i_bIndexMin[2] + 2; zIdex++)
+			{
+				if (xIdex >= 0 && xIdex < (numBlocks[0]) && yIdex >= 0 && yIdex < (numBlocks[1]) && zIdex >= 0 && zIdex < (numBlocks[2]))
+				{
+					blockIndex = xIdex + yIdex * numBlocks[0] + zIdex * numBlocks[0] * numBlocks[1];
+					numEleOfB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+					for (int e = 0; e < numEleOfB; e++)
+					{
+						eleID = o_dat.op_getBlock(blockIndex)->getEleoB(e);
+						if (o_dat.op_getEles(eleID - 1)->ci_algorithmType == 2)
+						{ 
+							numN = o_dat.op_getEles(eleID - 1)->ci_numNodes;
+							xN = new double[numN][3];
+							conNid = o_dat.op_getEles(eleID - 1)->cip_EleNodeId;
+							for (int i = 0; i < numN; i++)
+							{
+								o_dat.op_getNode(conNid[i] - 1)->getcoor(xN[i]);
+							}
+							o_dat.op_getEles(eleID - 1)->eleCenter(xC, xN);
+							dis = (xC[0] - crack[1][0]) * (xC[0] - crack[1][0]) + (xC[1] - crack[1][1]) * (xC[1] - crack[1][1]) + (xC[2] - crack[1][2]) * (xC[2] - crack[1][2]);
+							if (dis<Rsq)
+							{
+								o_dat.op_getEles(eleID - 1)->ci_algorithmType = 1;
+								o_dat.civ_pdeIDX.push_back(eleID - 1);
+							}
+							delete[] xN;
+						}
+					}
+				}
+			}
+		}
+	}*/
+}
+
+bool pdsolve::b_eleIntersectCrack(int eleID, double crack[][3], datModel& o_dat)
+{
+	int numNele, * conNid;
+	int edge[12][2];
+	double xN[2][3];
+	bool b_intersec = false;
+	if (o_dat.ci_Numdimen==2)
+	{
+		numNele = o_dat.op_getEles(eleID - 1)->ci_numNodes;
+		conNid = o_dat.op_getEles(eleID - 1)->cip_EleNodeId;
+		for (int i = 0; i < numNele-1; i++)
+		{
+			edge[i][0] = conNid[i];
+			edge[i][1] = conNid[i+1];
+		}
+		edge[numNele - 1][0] = conNid[numNele - 1];
+		edge[numNele - 1][1] = conNid[0];
+		for (int i = 0; i < numNele; i++)
+		{
+			o_dat.op_getNode(edge[i][0] - 1)->getcoor(xN[0]);
+			o_dat.op_getNode(edge[i][1] - 1)->getcoor(xN[1]);
+			if (intersection(xN[0], xN[1], crack[0], crack[1]))
+			{
+				b_intersec = true;
+				break;
+			}
+		}
+
+	}
+	else if (o_dat.ci_Numdimen == 3)
+	{
+		numNele = o_dat.op_getEles(eleID - 1)->ci_numNodes;
+		conNid = o_dat.op_getEles(eleID - 1)->cip_EleNodeId;
+		double XNode[8][3]{ 0 };
+		int numEdge = 0;
+		if (numNele==8)
+		{
+			//brick element;
+			numEdge = 12;
+			for (int i = 0; i < 3; i++)
+			{
+				edge[i][0] = i;
+				edge[i][1] = i + 1;
+				//==
+				edge[i + 4][0] = i + 4;
+				edge[i + 4][1] = i + 5;
+			}
+			edge[3][0] = 3;
+			edge[3][1] = 0;
+			edge[7][0] = 7;
+			edge[7][1] = 4;
+			for (int i = 0; i < 4; i++)
+			{
+				edge[8 + i][0] = i;
+				edge[8 + i][1] = i + 4;
+			}
+			for (int i = 0; i < 8; i++)
+			{
+				o_dat.op_getNode(conNid[i] - 1)->getcoor(XNode[i]);
+			}
+		}
+		else if (numNele==4)
+		{
+			//tetrahedron
+			numEdge = 6;
+			for (int i = 0; i < 3; i++)
+			{
+				edge[i][0] = 3;
+				edge[i][1] = i;
+			}
+			edge[3][0] = 0;
+			edge[3][1] = 1;
+			//
+			edge[4][0] = 1;
+			edge[4][1] = 2;
+			//
+			edge[5][0] = 2;
+			edge[5][1] = 0;
+			for (int i = 0; i < 4; i++)
+			{
+				o_dat.op_getNode(conNid[i] - 1)->getcoor(XNode[i]);
+			}
+		}
+		for (int i = 0; i < numEdge; i++)
+		{
+			if (segmentPlaneIntersection(XNode[edge[i][0]], XNode[edge[i][1]], crack))
+			{
+				b_intersec = true;
+				break;
+			}
+		}
+	}
+	return b_intersec;
+}
+
+//void pdsolve::setBlockAndFami(datModel& o_dat)
+//{
+//	double blockSize, lbc[3], rtc[3];
+//	o_dat.op_getGeomP()->getlbc(lbc);
+//	o_dat.op_getGeomP()->getrtc(rtc); 
+//	blockSize = o_dat.op_getGeomP()->getBlockSize();
+//	int numBlocks[3];
+//	o_dat.getNumOfBLock(numBlocks);
+//	//===allocate Nodes into block
+//	int blockIndex, i_bIndex[3];
+//	double xnode[3];
+//	if (o_dat.cb_FENSF==false)
+//	{
+//		for (int k = 0; k < o_dat.getTotnumNode(); k++)
+//		{
+//			//only pd node;
+//			if (o_dat.op_getNode(k)->getNodeType())
+//			{
+//				o_dat.op_getNode(k)->getcoor(xnode);
+//				for (int i = 0; i < 3; i++)
+//				{
+//					i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
+//				}
+//				blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+//					i_bIndex[2] * numBlocks[0] * numBlocks[1];
+//				o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
+//			}
+//		}
+//	}
+//	else
+//	{
+//		for (int k = 0; k < o_dat.getTotnumNode(); k++)
+//		{
+//			// all node;
+//			o_dat.op_getNode(k)->getcoor(xnode);
+//			for (int i = 0; i < 3; i++)
+//			{
+//				i_bIndex[i] = (xnode[i] - lbc[i]) / blockSize;
+//			}
+//			blockIndex = i_bIndex[0] + i_bIndex[1] * numBlocks[0] +
+//				i_bIndex[2] * numBlocks[0] * numBlocks[1];
+//			o_dat.op_getBlock(blockIndex)->putNodeInBlock(k + 1);
+//		}
+//	}
+//
+//
+//	//===============set families===============================
+//	/*===parallize===*/
+//	int totNumPDN, startP, endP, nd;
+//	totNumPDN = o_dat.civ_pdNodeIDX.size();
+//	startP = ci_rank * totNumPDN / ci_numProce;
+//	endP = (ci_rank + 1) * totNumPDN / ci_numProce;
+//	/*startP = 0;
+//	endP = totNumPDN;*/
+//	//=====
+//	double delta_k, delta_j;
+//	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
+//	double dist;//distance between MPx, cx
+//	int numNodeoB, NodeIDoB, numDimen; 
+//	numDimen = o_dat.ci_Numdimen;
+//	double minDelta = o_dat.op_getGeomP()->getminDelta();
+//	double fac = o_dat.op_getGeomP()->getFactor();
+//	//int countFam = 0;
+//	for (int famk = startP; famk < endP; famk++)
+//	{
+//		nd = o_dat.civ_pdNodeIDX[famk];
+//		//delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDimen);
+//		delta_k = o_dat.op_getFami(famk)->gethorizon();
+//		o_dat.op_getNode(nd)->getcoor(cx);
+//		o_dat.op_getFami(famk)->putNodeIntoFami(nd + 1);
+//		//set fam ID of node; moved to setPDNODEandnumFami()function;
+//		//o_dat.op_getNode(nd)->setFamID(famk + 1);
+//		for (int i = 0; i < 3; i++)
+//		{
+//			i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
+//		}
+//		for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
+//		{
+//			for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
+//			{
+//				for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
+//				{
+//					if (xIdex >= 0 && xIdex < (numBlocks[0]) &&
+//						yIdex >= 0 && yIdex < (numBlocks[1]) &&
+//						zIdex >= 0 && zIdex < (numBlocks[2]))
+//					{
+//						blockIndex = xIdex + yIdex * numBlocks[0] +
+//							zIdex * numBlocks[0] * numBlocks[1];
+//						numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
+//						for (int ii = 0; ii < numNodeoB; ii++)
+//						{
+//							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
+//							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
+//							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
+//							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
+//								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
+//							if (dist > minDelta* minDelta * 1.0e-16 &&( dist < (delta_k* delta_k + minDelta * minDelta * 1.0e-16)|| dist < (delta_j* delta_j + minDelta * minDelta * 1.0e-16)))
+//							{
+//								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
+//							}
+//						}
+//					}
+//				}
+//			}
+//		}
+//		
+//	}
+//	//==== sent and receive data;
+//	int LocSP, LocEP;
+//	int* numNDofFam = new int[totNumPDN];
+//	for (int rank = 0; rank < ci_numProce; rank++)
+//	{
+//		LocSP = rank * totNumPDN / ci_numProce;
+//		LocEP = (rank + 1) * totNumPDN / ci_numProce;
+//		for (int famk = LocSP; famk < LocEP; famk++)
+//		{
+//			//==== sent and receive data;
+//			numNDofFam[famk] = o_dat.op_getFami(famk)->civ_NID.size();
+//			MPI_Bcast(&(numNDofFam[famk]), 1, MPI_INT, rank, MPI_COMM_WORLD);
+//			o_dat.op_getFami(famk)->civ_NID.resize(numNDofFam[famk]);
+//			MPI_Bcast(&(o_dat.op_getFami(famk)->civ_NID[0]), numNDofFam[famk],
+//				MPI_INT, rank, MPI_COMM_WORLD);
+//		}
+//	}
+//	//release memory;
+//	delete[]numNDofFam; numNDofFam = NULL;
+//	//o_dat.civ_pdNodeIDX.clear();
+//	//initial bond state;
+//	for (int k = 0; k < o_dat.getTotnumFami(); k++)
+//	{
+//		o_dat.op_getFami(k)->initialBondState();
+//	}
+//}
+
+
 void pdsolve::setCSRIndexes_gloStiffMat(datModel& o_dat)
 {
+	// before solving, call this funtion to initialize data;
+	// during solving, only call this funtion if Eriched region is updated;
 	//This function is set indexes for global stiffness matrix in CSR format;
 	// output is ia and ja;
 	//allocate ia zero-based format;
@@ -652,97 +977,84 @@ void pdsolve::setCSRIndexes_gloStiffMat(datModel& o_dat)
 		delete[] cip_ia;
 		cip_ia = NULL;
 	}
-	cip_ia = new long long int[numEq + 1];
-	for (int i = 0; i < numEq+1; i++)
-	{
-		//zero-based, ia[0]=0 always.
-		cip_ia[i] = 0;
-	}
+	cip_ia = new long long int[numEq + 1]{ 0 };//zero-based, ia[0]=0 always.
+	
 	//============ find interactions of each node=========;
-	vector<int>* inteNode = new vector<int> [totNumNode];
+	if (!cvp_inteNode)
+	{
+		cvp_inteNode = new vector<int>[totNumNode];
+	}
+
 	//====PD family===;
 	int NID_k;
 	vector<int> famV;
-	for (int famk = 0; famk < o_dat.getTotnumFami(); famk++)
+	int sz = o_dat.civ_pdNodeIDX.size();
+	for (int famk = o_dat.ci_oldNumPDNode; famk < sz; famk++)
 	{
 		NID_k = o_dat.op_getFami(famk)->getNodeID(0);
 		//famV = o_dat.op_getFami(famk)->GetvecNid();
-		inteNode[NID_k - 1].assign(o_dat.op_getFami(famk)->civ_NID.begin(), o_dat.op_getFami(famk)->civ_NID.end());
+		cvp_inteNode[NID_k - 1].assign(o_dat.op_getFami(famk)->civ_NID.begin(), o_dat.op_getFami(famk)->civ_NID.end());
 	}
 	famV.clear();
+	int numNele, * conNID, famID, numNodeOfFam;
+	// *****************no need any more*********************
 	//==PDBE interactions==
-	int numNele, * conNID, famID, numNodeOfFam, NID_m;
-	for (int pdbe = 0; pdbe < o_dat.getTotnumPDBEs(); pdbe++)
-	{
-		numNele = o_dat.op_getPDBE(pdbe)->i_getNumnode();
-		conNID = new int[numNele];
-		o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
-		for (int nd = 0; nd < numNele; nd++)
-		{
-			famID = o_dat.op_getNode(conNID[nd] - 1)->getFamID();
-			numNodeOfFam = o_dat.op_getFami(famID - 1)->getNumNode();
-			for (int i = 0; i < numNele; i++)
-			{
-				if (i != nd)
-				{
-					inteNode[conNID[i] - 1].insert(inteNode[conNID[i] - 1].end(), o_dat.op_getFami(famID - 1)->civ_NID.begin(), o_dat.op_getFami(famID - 1)->civ_NID.end());
-				}
-			}
-			/*for (int m = 0; m < numNodeOfFam; m++)
-			{
-				NID_m = o_dat.op_getFami(famID - 1)->getNodeID(m);
-				for (int i = 0; i < numNele; i++)
-				{
-					if (i!=nd)
-					{
-						inteNode[conNID[i] - 1].push_back(NID_m);
-					}
-				}
-			}*/
-		}
-		delete[]conNID;
-		conNID = NULL;
-	}
+	//for (int pdbe = 0; pdbe < o_dat.getTotnumPDBEs(); pdbe++) //**********here can be improved;
+	//{
+	//	numNele = o_dat.op_getPDBE(pdbe)->i_getNumnode();
+	//	conNID = new int[numNele];
+	//	o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
+	//	for (int nd = 0; nd < numNele; nd++)
+	//	{
+	//		famID = o_dat.op_getNode(conNID[nd] - 1)->getFamID();
+	//		numNodeOfFam = o_dat.op_getFami(famID - 1)->getNumNode();
+	//		for (int i = 0; i < numNele; i++)
+	//		{
+	//			if (i != nd)
+	//			{
+	//				cvp_inteNode[conNID[i] - 1].insert(cvp_inteNode[conNID[i] - 1].end(), o_dat.op_getFami(famID - 1)->civ_NID.begin(), o_dat.op_getFami(famID - 1)->civ_NID.end());
+	//			}
+	//		}
+	//	}
+	//	delete[]conNID;
+	//	conNID = NULL;
+	//}
 	//===fem interactions;
-	int algoType;
-	for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+	if (o_dat.cb_ERupdate==false)
 	{
-		algoType = o_dat.op_getEles(ele)->getAlgoType();
-		if (algoType==2)
+		for (auto ele : o_dat.civ_feIDX)
 		{
 			numNele = o_dat.op_getEles(ele)->getNumNodes();
-			conNID = new int[numNele];
+			conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
 			o_dat.op_getEles(ele)->getConNid(conNID);
 			for (int nd = 0; nd < numNele; nd++)
 			{
 				for (int i = 0; i < numNele; i++)
 				{
-					inteNode[(conNID[nd] - 1)].push_back(conNID[i]);
+					cvp_inteNode[(conNID[nd] - 1)].push_back(conNID[i]);
 				}
 			}
-			delete[] conNID;
-			conNID = NULL;
 		}
 	}
 	//=====delete the duplicated nodes and sort them in ascending order;
 	unordered_set<int> inteSet;
 	for (int nd = 0; nd < totNumNode; nd++)
 	{
-		for (int NODEID : inteNode[nd])
+		for (int NODEID : cvp_inteNode[nd])
 		{
 			inteSet.insert(NODEID);
 		}
-		inteNode[nd].assign(inteSet.begin(), inteSet.end());
+		cvp_inteNode[nd].assign(inteSet.begin(), inteSet.end());
 		//sort
-		sort(inteNode[nd].begin(), inteNode[nd].end());
+		sort(cvp_inteNode[nd].begin(), cvp_inteNode[nd].end());
 		inteSet.clear();
 	}
 	//============get ia, ja==========================================
-	int eqInd_row, eqInd_col = -10, sz;
+	int eqInd_row, eqInd_col = -10;
 	vector<int>vec_ja;
 	for (int nd = 0; nd < totNumNode; nd++)
 	{
-		sz= inteNode[nd].size();
+		sz= cvp_inteNode[nd].size();
 		for (int i = 0; i < numDime; i++)
 		{
 			eqInd_row = o_dat.op_getNode(nd)->op_getDof(i)->i_getEqInde();
@@ -752,7 +1064,7 @@ void pdsolve::setCSRIndexes_gloStiffMat(datModel& o_dat)
 				{
 					for (int j = 0; j < numDime; j++)
 					{
-						eqInd_col = o_dat.op_getNode(inteNode[nd].at(itN) - 1)->op_getDof(j)->i_getEqInde();
+						eqInd_col = o_dat.op_getNode(cvp_inteNode[nd].at(itN) - 1)->op_getDof(j)->i_getEqInde();
 						if (eqInd_col!=-1)
 						{
 							vec_ja.push_back(eqInd_col);//zero-based;
@@ -766,12 +1078,12 @@ void pdsolve::setCSRIndexes_gloStiffMat(datModel& o_dat)
 			}
 		}
 	}
-	for (int nd = 0; nd < totNumNode; nd++)
+	/*for (int nd = 0; nd < totNumNode; nd++)
 	{
-		inteNode[nd].clear();
+		cvp_inteNode[nd].clear();
 	}
-	delete[] inteNode;
-	inteNode = NULL;
+	delete[] cvp_inteNode;
+	cvp_inteNode = NULL;*/
 	//====get real ia=== caution: zero-based;
 	for (int i = 0; i < numEq; i++)
 	{
@@ -791,8 +1103,16 @@ void pdsolve::setCSRIndexes_gloStiffMat(datModel& o_dat)
 	}
 	vec_ja.clear();
 	//===initializa cdp_ku;
-	cdp_Ku = new double[size_ja];
-	cdp_KuGlo = new double[size_ja];
+	if (cdp_Ku)
+	{
+		delete[]cdp_Ku;
+	}
+	if (cdp_KuGlo)
+	{
+		delete[]cdp_KuGlo;
+	}
+	cdp_Ku = new double[size_ja] {0};
+	cdp_KuGlo = new double[size_ja] {0};
 	for (long long int i = 0; i < size_ja; i++)
 	{
 		cdp_Ku[i] = 0;
@@ -886,6 +1206,567 @@ bool pdsolve::segmentPlaneIntersection(double xp1[], double xp2[], double xN[][3
 		}
 	}
 	
+}
+
+bool pdsolve::b_vcom1(int* a, int* b)
+{
+	return a[0] < b[0];;
+}
+
+bool pdsolve::b_vcom_GP(const GausPoint_Jint& a, const GausPoint_Jint& b)
+{
+	return a.theta<b.theta;
+}
+
+void pdsolve::updatePDBE(datModel& o_dat)
+{
+	//update PDBE
+	// do not modify the element's order in civ_pdeIDX
+	// update ci_oldNumPDE each time;
+	int sz = o_dat.civ_pdeIDX.size();
+	if (sz-o_dat.ci_oldNumPDE==0)
+	{
+		return;
+	}
+	int pde, numNE, * eleNID;
+	if (o_dat.ci_Numdimen==2)
+	{
+		//===================for 2D===========
+		int j, k;
+		for (int i = o_dat.ci_oldNumPDE; i < sz; i++)
+		{
+			pde = o_dat.civ_pdeIDX.at(i);
+			numNE = o_dat.op_getEles(pde)->ci_numNodes;
+			eleNID = o_dat.op_getEles(pde)->cip_EleNodeId;
+			for (j = 0; j < numNE-1; j++)
+			{
+				int* arr = new int[3];
+				k = j + 1;
+				if (eleNID[j]<eleNID[k])
+				{
+					arr[0] = eleNID[j];
+					arr[1] = eleNID[k];
+					arr[2] = 1; //counter-clock wise;
+				}
+				else
+				{
+					arr[1] = eleNID[j];
+					arr[0] = eleNID[k];
+					arr[2] = -1;
+				}
+				cpv_pdbe.push_back(arr);
+			}
+			int* arr = new int[3];
+			j = numNE - 1;
+			k = 0;
+			if (eleNID[j] < eleNID[k])
+			{
+				arr[0] = eleNID[j];
+				arr[1] = eleNID[k];
+				arr[2] = 1;
+			}
+			else
+			{
+				arr[1] = eleNID[j];
+				arr[0] = eleNID[k];
+				arr[2] = -1;
+			}
+			cpv_pdbe.push_back(arr);
+		}
+		//sort===
+		sort(cpv_pdbe.begin(), cpv_pdbe.end(), b_vcom1);
+		bool b_gotit;
+		vector<int*>::iterator iter1;
+		vector<int*>::iterator iter2;
+		for (iter1 = cpv_pdbe.begin(); iter1 != cpv_pdbe.end(); )
+		{
+			//cout << "====iter1=" << iter1 - cpv_pdbe.begin() << endl;
+			b_gotit = false;
+			for (iter2 = iter1 + 1; iter2 != cpv_pdbe.end(); iter2++)
+			{
+				//cout << "iter2 = " << iter2 - cpv_pdbe.begin() << endl;
+				if ((*iter1)[0] != (*iter2)[0])
+				{
+					break;
+				}
+				else 
+				{
+					if ((*iter1)[1] == (*iter2)[1])
+					{
+						b_gotit = true;
+						break;
+					}
+					
+				}
+			}
+			if (b_gotit)
+			{
+				delete[]((*iter2));
+				cpv_pdbe.erase(iter2);
+				delete[]((*iter1));
+				iter1 = cpv_pdbe.erase(iter1);
+			}
+			else
+			{
+				iter1++;
+			}
+		}
+		assignPDBE(o_dat);
+	}
+	else if (o_dat.ci_Numdimen == 3)
+	{
+		int bE[7] = { 0,1,2,3,0,1,2 };
+		int tE[5] = { 0,1,2,0,1 };
+		int pos=0;
+		int d_bE[6] = { -1,1,-1,1,-1,1 };
+		for (int i = o_dat.ci_oldNumPDE; i < sz; i++)
+		{
+			pde = o_dat.civ_pdeIDX.at(i);
+			numNE = o_dat.op_getEles(pde)->ci_numNodes;
+			eleNID = o_dat.op_getEles(pde)->cip_EleNodeId;
+			if (numNE==8)
+			{
+				//brick element;
+				int face[6][4] = { eleNID[0],eleNID[1],eleNID[2],eleNID[3],
+				eleNID[4],eleNID[5],eleNID[6],eleNID[7],
+				eleNID[0],eleNID[3],eleNID[7],eleNID[4],
+				eleNID[1],eleNID[2],eleNID[6],eleNID[5],
+				eleNID[0],eleNID[4],eleNID[5],eleNID[1],
+				eleNID[3],eleNID[7],eleNID[6],eleNID[2] };
+				for (int j = 0; j < 6; j++)
+				{
+					pos = min_element(face[j], face[j] + 4) - face[j];
+					int* arr = new int[5]{ face[j][bE[pos]],face[j][bE[pos + 1]],face[j][bE[pos + 2]],face[j][bE[pos + 3]],d_bE[j]};
+					cpv_pdbe.push_back(arr);
+				}
+				
+			}
+			else if (numNE==4)
+			{
+				//tetrahedron element, need test more;
+				int face[4][3] = { eleNID[0],eleNID[1],eleNID[3],
+				eleNID[1],eleNID[2],eleNID[3],
+				eleNID[2],eleNID[0],eleNID[3], 
+				eleNID[0],eleNID[2],eleNID[1]};
+				for (int j = 0; j < 4; j++)
+				{
+					pos = min_element(face[j], face[j] + 3) - face[j];
+					int* arr = new int[5]{ face[j][tE[pos]],face[j][tE[pos + 1]],face[j][tE[pos + 2]],face[j][tE[pos + 2]]};
+					cpv_pdbe.push_back(arr);
+				}
+			}
+		}
+		//sort===
+		sort(cpv_pdbe.begin(), cpv_pdbe.end(), b_vcom1);
+		bool b_gotit;
+		vector<int*>::iterator iter1;
+		vector<int*>::iterator iter2;
+		for (iter1 = cpv_pdbe.begin(); iter1 != cpv_pdbe.end(); )
+		{
+			//cout << "====iter1=" << iter1 - cpv_pdbe.begin() << endl;
+			b_gotit = false;
+			for (iter2 = iter1 + 1; iter2 != cpv_pdbe.end(); iter2++)
+			{
+				//cout << "iter2 = " << iter2 - cpv_pdbe.begin() << endl;
+				if ((*iter1)[0] != (*iter2)[0])
+				{
+					break;
+				}
+				else
+				{
+					if ((*iter1)[2]!= (*iter1)[3])
+					{
+						//==brick element
+						if ((*iter1)[1] == (*iter2)[1]&& (*iter1)[2] == (*iter2)[2]&& (*iter1)[3] == (*iter2)[3])
+						{
+							b_gotit = true;
+							break;
+						}
+					}
+					else
+					{
+						if ((*iter2)[2] != (*iter2)[3]&& (*iter1)[1] == (*iter2)[2]&& (*iter1)[2] == (*iter2)[1])
+						{
+							b_gotit = true;
+							break;
+						}
+					}
+					
+				}
+			}
+			if (b_gotit)
+			{
+				delete[]((*iter2));
+				cpv_pdbe.erase(iter2);
+				delete[]((*iter1));
+				iter1 = cpv_pdbe.erase(iter1);
+			}
+			else
+			{
+				iter1++;
+			}
+		}
+		//===
+		assignPDBE(o_dat);
+	}
+}
+
+void pdsolve::UpdateNodeType(datModel& o_dat)
+{
+	int * conNID, numNele, ele;
+	//for PD element
+	int sz = o_dat.civ_pdeIDX.size();
+	for (int i = o_dat.ci_oldNumPDE; i < sz; i++)
+	{
+		ele = o_dat.civ_pdeIDX.at(i);
+		numNele = o_dat.op_getEles(ele)->getNumNodes();
+		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+		for (int i = 0; i < numNele; i++)
+		{
+			o_dat.op_getNode(conNID[i] - 1)->setNodeType(2);// PD node
+		}
+	}
+	//for PDBE
+	for (int pdbe = 0; pdbe < o_dat.ci_numPDBEs; pdbe++)
+	{
+		numNele = o_dat.cop2_PDBE[pdbe]->i_getNumnode();
+		conNID = o_dat.cop2_PDBE[pdbe]->ci_nodeID;
+		for (int i = 0; i < numNele; i++)
+		{
+			o_dat.op_getNode(conNID[i] - 1)->setNodeType(1);//interface node;
+		}
+	}
+}
+
+void pdsolve::initialPDN_Fami(datModel& o_dat)
+{
+	//===get civ_pdNodeIDX;
+	for (int k = 0; k < o_dat.getTotnumNode(); k++)
+	{
+		if (o_dat.op_getNode(k)->getNodeType())
+		{
+			o_dat.civ_pdNodeIDX.push_back(k);
+		}
+	}
+	// allocate family memory, set delta, family ID for PD node.
+	int numPDN= o_dat.civ_pdNodeIDX.size();
+	o_dat.cpv_FamiOfNode.resize(numPDN);
+	int nd, numDime = o_dat.ci_Numdimen;
+	double delta_k, delta_j;
+	double fac = o_dat.op_getGeomP()->getFactor();
+	for (int k = 0; k < numPDN; k++)
+	{
+		o_dat.cpv_FamiOfNode.at(k)= new pdFamily();
+		nd = o_dat.civ_pdNodeIDX[k];
+		delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDime);
+		o_dat.cpv_FamiOfNode.at(k)->sethorizon(delta_k);
+		o_dat.op_getNode(o_dat.civ_pdNodeIDX.at(k))->setFamID(k+1); // set family ID for node, do not miss this section
+	}
+	//===calcultate PD node volume;
+	int* conNId, numNele, ele, famID;
+	double dv;
+	for (auto iter = o_dat.civ_pdeIDX.begin(); iter!= o_dat.civ_pdeIDX.end(); iter++)
+	{
+		ele = (*iter);
+		numNele = o_dat.op_getEles(ele)->ci_numNodes;
+		conNId = o_dat.op_getEles(ele)->cip_EleNodeId;
+		dv = o_dat.op_getEles(ele)->cd_V;
+		for (int i = 0; i < numNele; i++)
+		{
+			famID = o_dat.op_getNode(conNId[i] - 1)->getFamID();
+			o_dat.op_getFami(famID - 1)->cd_v = o_dat.op_getFami(famID - 1)->cd_v + dv / numNele;
+		}
+	}
+
+	int  startP, endP;
+	startP = ci_rank * numPDN / ci_numProce;
+	endP = (ci_rank + 1) * numPDN / ci_numProce;
+	//=====
+	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
+	double dist;//distance between MPx, cx
+	int numNodeoB, NodeIDoB, numDimen;
+	numDimen = o_dat.ci_Numdimen;
+	double minDelta = o_dat.op_getGeomP()->getminDelta();
+	int blockIndex, i_bIndex[3];
+	double blockSize, lbc[3], rtc[3];
+	o_dat.op_getGeomP()->getlbc(lbc);
+	o_dat.op_getGeomP()->getrtc(rtc);
+	blockSize = o_dat.op_getGeomP()->getBlockSize();
+	int numBlocks[3];
+	o_dat.getNumOfBLock(numBlocks);
+	for (int famk = startP; famk < endP; famk++)
+	{
+		nd = o_dat.civ_pdNodeIDX[famk];
+		//delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDimen);
+		delta_k = o_dat.op_getFami(famk)->gethorizon();
+		o_dat.op_getNode(nd)->getcoor(cx);
+		o_dat.op_getFami(famk)->putNodeIntoFami(nd + 1);
+		//set fam ID of node; moved to setPDNODEandnumFami()function;
+		//o_dat.op_getNode(nd)->setFamID(famk + 1);
+		for (int i = 0; i < 3; i++)
+		{
+			i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
+		}
+		for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
+		{
+			for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
+			{
+				for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
+				{
+					if (xIdex >= 0 && xIdex < (numBlocks[0]) &&
+						yIdex >= 0 && yIdex < (numBlocks[1]) &&
+						zIdex >= 0 && zIdex < (numBlocks[2]))
+					{
+						blockIndex = xIdex + yIdex * numBlocks[0] +
+							zIdex * numBlocks[0] * numBlocks[1];
+						numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
+						for (int ii = 0; ii < numNodeoB; ii++)
+						{
+							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
+							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
+							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
+							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1])
+								+ (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
+							if (dist > minDelta * minDelta * 1.0e-16 && (dist < (delta_k * delta_k + minDelta * minDelta * 1.0e-16) || dist < (delta_j * delta_j + minDelta * minDelta * 1.0e-16)))
+							{
+								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
+							}
+						}
+					}
+				}
+			}
+		}
+
+	}
+	//==== sent and receive data;
+	int LocSP, LocEP;
+	int* numNDofFam = new int[numPDN];
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		LocSP = rank * numPDN / ci_numProce;
+		LocEP = (rank + 1) * numPDN / ci_numProce;
+		for (int famk = LocSP; famk < LocEP; famk++)
+		{
+			//==== sent and receive data;
+			numNDofFam[famk] = o_dat.op_getFami(famk)->civ_NID.size();
+			MPI_Bcast(&(numNDofFam[famk]), 1, MPI_INT, rank, MPI_COMM_WORLD);
+			o_dat.op_getFami(famk)->civ_NID.resize(numNDofFam[famk]);
+			MPI_Bcast(&(o_dat.op_getFami(famk)->civ_NID[0]), numNDofFam[famk],
+				MPI_INT, rank, MPI_COMM_WORLD);
+		}
+	}
+	//release memory;
+	delete[]numNDofFam; numNDofFam = NULL;
+	//o_dat.civ_pdNodeIDX.clear();
+	//initial bond state;
+	for (int k = 0; k < o_dat.getTotnumFami(); k++)
+	{
+		o_dat.op_getFami(k)->initialBondState();
+	}
+	
+}
+
+void pdsolve::updatePDN_Fami(datModel& o_dat)
+{
+	//=====update PD node vector  civ_pdNodeIDX;
+	o_dat.ci_oldNumPDNode = o_dat.civ_pdNodeIDX.size();
+	int* conNID, numNele, ele;
+	//for PD element
+	int sz = o_dat.civ_pdeIDX.size();
+	for (int i = o_dat.ci_oldNumPDE; i < sz; i++)
+	{
+		ele = o_dat.civ_pdeIDX.at(i);
+		numNele = o_dat.op_getEles(ele)->getNumNodes();
+		conNID = o_dat.op_getEles(ele)->cip_EleNodeId;
+		for (int i = 0; i < numNele; i++)
+		{
+			if (!(find(o_dat.civ_pdNodeIDX.begin(), o_dat.civ_pdNodeIDX.end(), conNID[i] - 1) != (o_dat.civ_pdNodeIDX.end())))
+			{
+				o_dat.civ_pdNodeIDX.push_back(conNID[i] - 1);
+			}
+		}
+	}
+	// allocate family memory, set delta, family ID for PD node.
+	int numPDN = o_dat.civ_pdNodeIDX.size();
+	o_dat.cpv_FamiOfNode.resize(numPDN);
+	int nd, numDime = o_dat.ci_Numdimen;
+	double delta_k, delta_j;
+	double fac = o_dat.op_getGeomP()->getFactor();
+	for (int k = o_dat.ci_oldNumPDNode; k < numPDN; k++)
+	{
+		o_dat.cpv_FamiOfNode.at(k) = new pdFamily();
+		nd = o_dat.civ_pdNodeIDX[k];
+		delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDime);
+		o_dat.cpv_FamiOfNode.at(k)->sethorizon(delta_k);
+		o_dat.op_getNode(o_dat.civ_pdNodeIDX.at(k))->setFamID(k + 1); // set family ID for node, do not miss this section
+	}
+	//===calcultate PD node volume;
+	int* conNId, famID;
+	double dv;
+	for (int k = o_dat.ci_oldNumPDE; k < sz; k++)
+	{
+		ele = o_dat.civ_pdeIDX.at(k);
+		numNele = o_dat.op_getEles(ele)->ci_numNodes;
+		conNId = o_dat.op_getEles(ele)->cip_EleNodeId;
+		dv = o_dat.op_getEles(ele)->cd_V;
+		for (int i = 0; i < numNele; i++)
+		{
+			famID = o_dat.op_getNode(conNId[i] - 1)->getFamID();
+			o_dat.op_getFami(famID - 1)->cd_v = o_dat.op_getFami(famID - 1)->cd_v + dv / numNele;
+		}
+	}
+	//=====set family;
+	int  startP, endP;
+	startP = ci_rank * (numPDN- o_dat.ci_oldNumPDNode) / ci_numProce;
+	endP = (ci_rank + 1) * (numPDN - o_dat.ci_oldNumPDNode) / ci_numProce;
+	double MPx[3], cx[3];//MPx, cx,are coordinate of  center point of node j and k	 respectively
+	double dist;//distance between MPx, cx
+	int numNodeoB, NodeIDoB, numDimen;
+	numDimen = o_dat.ci_Numdimen;
+	double minDelta = o_dat.op_getGeomP()->getminDelta();
+	int blockIndex, i_bIndex[3];
+	double blockSize, lbc[3], rtc[3];
+	o_dat.op_getGeomP()->getlbc(lbc);
+	o_dat.op_getGeomP()->getrtc(rtc);
+	blockSize = o_dat.op_getGeomP()->getBlockSize();
+	int numBlocks[3];
+	o_dat.getNumOfBLock(numBlocks);
+	for (int famk = o_dat.ci_oldNumPDNode; famk < numPDN; famk++)
+	{
+		nd = o_dat.civ_pdNodeIDX[famk];
+		//delta_k = fac * pow((o_dat.op_getNode(nd)->getvolume()), 1.0 / numDimen);
+		delta_k = o_dat.op_getFami(famk)->gethorizon();
+		o_dat.op_getNode(nd)->getcoor(cx);
+		o_dat.op_getFami(famk)->putNodeIntoFami(nd + 1);
+		//set fam ID of node; moved to setPDNODEandnumFami()function;
+		//o_dat.op_getNode(nd)->setFamID(famk + 1);
+		for (int i = 0; i < 3; i++)
+		{
+			i_bIndex[i] = (cx[i] - lbc[i]) / blockSize;
+		}
+		for (int xIdex = i_bIndex[0] - 1; xIdex < i_bIndex[0] + 2; xIdex++)
+		{
+			for (int yIdex = i_bIndex[1] - 1; yIdex < i_bIndex[1] + 2; yIdex++)
+			{
+				for (int zIdex = i_bIndex[2] - 1; zIdex < i_bIndex[2] + 2; zIdex++)
+				{
+					if (xIdex >= 0 && xIdex < (numBlocks[0]) &&
+						yIdex >= 0 && yIdex < (numBlocks[1]) &&
+						zIdex >= 0 && zIdex < (numBlocks[2]))
+					{
+						blockIndex = xIdex + yIdex * numBlocks[0] + zIdex * numBlocks[0] * numBlocks[1];
+						numNodeoB = o_dat.op_getBlock(blockIndex)->getNumNodeoB();
+						for (int ii = 0; ii < numNodeoB; ii++)
+						{
+							NodeIDoB = o_dat.op_getBlock(blockIndex)->getNodeoB(ii);
+							o_dat.op_getNode(NodeIDoB - 1)->getcoor(MPx);
+							delta_j = fac * pow((o_dat.op_getNode(NodeIDoB - 1)->getvolume()), 1.0 / numDimen);
+							dist = ((MPx[0] - cx[0]) * (MPx[0] - cx[0]) + (MPx[1] - cx[1]) * (MPx[1] - cx[1]) + (MPx[2] - cx[2]) * (MPx[2] - cx[2]));
+							if (dist > minDelta * minDelta * 1.0e-16 && (dist < (delta_k * delta_k + minDelta * minDelta * 1.0e-16) || dist < (delta_j * delta_j + minDelta * minDelta * 1.0e-16)))
+							{
+								o_dat.op_getFami(famk)->putNodeIntoFami(NodeIDoB);
+							}
+						}
+					}
+				}
+			}
+		}
+		
+	}
+	//==== sent and receive data;
+	int LocSP, LocEP;
+	int* numNDofFam = new int[numPDN];
+	for (int rank = 0; rank < ci_numProce; rank++)
+	{
+		LocSP = rank * (numPDN - o_dat.ci_oldNumPDNode) / ci_numProce;
+		LocEP = (rank + 1) * (numPDN - o_dat.ci_oldNumPDNode) / ci_numProce;
+		for (int famk = LocSP; famk < LocEP; famk++)
+		{
+			//==== sent and receive data;
+			numNDofFam[famk] = o_dat.op_getFami(famk)->civ_NID.size();
+			MPI_Bcast(&(numNDofFam[famk]), 1, MPI_INT, rank, MPI_COMM_WORLD);
+			o_dat.op_getFami(famk)->civ_NID.resize(numNDofFam[famk]);
+			MPI_Bcast(&(o_dat.op_getFami(famk)->civ_NID[0]), numNDofFam[famk],
+				MPI_INT, rank, MPI_COMM_WORLD);
+		}
+	}
+	//release memory;
+	delete[]numNDofFam; numNDofFam = NULL;
+	//==initalize mu=1;
+	for (int k = o_dat.ci_oldNumPDNode; k < numPDN; k++)
+	{
+		o_dat.op_getFami(k)->initialBondState();
+	}
+}
+
+void pdsolve::assignPDBE(datModel& o_dat)
+{
+	if (o_dat.cop2_PDBE)
+	{
+		for (int k = 0; k < o_dat.ci_numPDBEs; k++)
+		{
+			delete o_dat.cop2_PDBE[k];
+		}
+		delete[] o_dat.cop2_PDBE;
+		o_dat.cop2_PDBE = NULL;
+	}
+	o_dat.ci_numPDBEs = cpv_pdbe.size();
+	o_dat.cop2_PDBE = new pdPDBEs * [o_dat.ci_numPDBEs];
+	if (o_dat.ci_Numdimen==2)
+	{
+		int bNid[2];
+		int k = 0;
+		for (auto iter = cpv_pdbe.begin(); iter != cpv_pdbe.end(); iter++)
+		{
+			if ((*iter)[2]==1)
+			{
+				bNid[0] = (*iter)[0];
+				bNid[1] = (*iter)[1];
+			}
+			else
+			{
+				bNid[0] = (*iter)[1];
+				bNid[1] = (*iter)[0];
+			}
+			(o_dat.cop2_PDBE)[k] = new pdPDBEs(bNid, 2);
+			k++;
+		}
+	}
+	else if (o_dat.ci_Numdimen == 3)
+	{
+		int bNid[4];
+		int k = 0;
+		for (auto iter = cpv_pdbe.begin(); iter != cpv_pdbe.end(); iter++)
+		{
+			if ((*iter)[2] == (*iter)[3])
+			{
+				bNid[0] = (*iter)[0];
+				bNid[1] = (*iter)[1];
+				bNid[2] = (*iter)[2];
+				bNid[3] = (*iter)[2];
+			}
+			else
+			{
+				if ((*iter)[4]==1)
+				{
+					for (int i = 0; i < 4; i++)
+					{
+						bNid[i] = (*iter)[i];
+					}
+				}
+				else
+				{
+					for (int i = 0; i < 4; i++)
+					{
+						bNid[3-i] = (*iter)[i];
+					}
+				}
+			}
+			(o_dat.cop2_PDBE)[k] = new pdPDBEs(bNid, 4);
+			k++;
+		}
+	}
+
 }
 
 long long int pdsolve::findCSRIndexOfMat(int rowIndex, int colIndex)
@@ -1660,7 +2541,8 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat, double* U_N)
 			temP_fami = o_dat.op_getFami(famkk);
 			numNodeOfFami = temP_fami->getNumNode();
 			NID_k = temP_fami->getNodeID(0);
-			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
+			//dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
+			dv_k = temP_fami->cd_v;
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
 			matH2D(H, temP_fami, o_dat);
@@ -1759,7 +2641,8 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat, double* U_N)
 			temP_fami = o_dat.op_getFami(famkk);
 			numNodeOfFami = temP_fami->getNumNode();
 			NID_k = temP_fami->getNodeID(0);
-			dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
+			//dv_k = o_dat.op_getNode(NID_k - 1)->getvolume();
+			dv_k = temP_fami->cd_v;
 			//==get H==
 			H = new Matrix(numDime, numDime * numNodeOfFami);
 			matH3D(H, temP_fami, o_dat);
@@ -1847,57 +2730,239 @@ void pdsolve::assembleInterWorkPD_CSRformat(datModel& o_dat, double* U_N)
 
 void pdsolve::assemblePDBEwork3D_CSRformat(datModel& o_dat, double* U_N)
 {
+	//int numPDBEs, startP, endP;
+	//numPDBEs = o_dat.getTotnumPDBEs();
+	//startP = ci_rank * numPDBEs / ci_numProce;
+	//endP = (ci_rank + 1) * numPDBEs / ci_numProce;
+	////====================3D quad 4N PDBE===================
+	//int conNID[4];
+	//double xN[4][3], N[4];//N[4] are shape functions;
+	//Matrix* mNt, * Nmat, * f_mNt, * f_mNt_Nm, * f_mNt_Nm_D;
+	//mNt = new Matrix(12, 3);
+	//Nmat = new Matrix(3, 6);
+	//f_mNt = new Matrix(12, 3);
+	//f_mNt_Nm = new Matrix(12, 6);
+	//f_mNt_Nm_D = new Matrix(12, 6);
+	////====================3D tri 3N PDBE===================
+	//Matrix* tri_mNt[3], * tri_mNtN[3],  *tri_mNt_N_D;
+	//for (int i = 0; i < 3; i++)
+	//{
+	//	tri_mNt[i] = new Matrix(9, 3);
+	//	tri_mNtN[i] = new Matrix(9, 6);
+	//}
+	//matMathcalNt_trian(tri_mNt);
+	//tri_mNt_N_D = new Matrix(9, 6);
+	////===========3D=======================================
+	//for (int pdbe = startP; pdbe < endP; pdbe++)
+	//{
+	//	//==get PDBEs==
+	//	o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
+	//	if (conNID[3]!=conNID[2])
+	//	{
+	//		//====================3D quad 4N PDBE===================
+	//		assemblePDBEworkQuad4NElement_CSRformat(o_dat, U_N, conNID,xN, N, mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D);
+	//	}
+	//	else
+	//	{
+	//		//====================3D tri 3N PDBE===================
+	//		assemblePDBEworkTri3NElement_CSRformat(o_dat, U_N, conNID, xN, tri_mNt, tri_mNtN, tri_mNt_N_D);
+	//	}
+	//}
+	////====================3D tri 3N PDBE===================
+	//delete mNt, delete Nmat, delete f_mNt, delete f_mNt_Nm, delete f_mNt_Nm_D;
+	//mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
+	////====================3D tri 3N PDBE===================
+	//for (int i = 0; i < 3; i++)
+	//{
+	//	delete tri_mNt[i], delete tri_mNtN[i];
+	//	tri_mNt[i] = NULL, tri_mNtN[i] = NULL;
+	//}
+	//delete  tri_mNt_N_D;
+	//tri_mNt_N_D = NULL;
+
+
 	int numPDBEs, startP, endP;
 	numPDBEs = o_dat.getTotnumPDBEs();
 	startP = ci_rank * numPDBEs / ci_numProce;
 	endP = (ci_rank + 1) * numPDBEs / ci_numProce;
-	
-	//====================3D quad 4N PDBE===================
+	int numDime = o_dat.ci_Numdimen;
+	pdFamily* temP_fami;
+	//====================3D===================
 	int conNID[4];
-	double xN[4][3], N[4];//N[4] are shape functions;
-	Matrix* mNt, * Nmat, * f_mNt, * f_mNt_Nm, * f_mNt_Nm_D;
-	mNt = new Matrix(12, 3);
+	int famiID, numNodeFam, eqIndex_row, eqIndex_col;
+	int NID_m, numN=0;
+	long long int i_temp;
+	double  xN[4][3], temp, tempu;
+	Matrix *Nmat, * C, *ND, * finMat;
 	Nmat = new Matrix(3, 6);
-	f_mNt = new Matrix(12, 3);
-	f_mNt_Nm = new Matrix(12, 6);
-	f_mNt_Nm_D = new Matrix(12, 6);
-	//====================3D tri 3N PDBE===================
-	Matrix* tri_mNt[3], * tri_mNtN[3],  *tri_mNt_N_D;
-	for (int i = 0; i < 3; i++)
-	{
-		tri_mNt[i] = new Matrix(9, 3);
-		tri_mNtN[i] = new Matrix(9, 6);
-	}
-	matMathcalNt_trian(tri_mNt);
-	tri_mNt_N_D = new Matrix(9, 6);
+	ND = new Matrix(3, 6);
 	//===========3D=======================================
 	for (int pdbe = startP; pdbe < endP; pdbe++)
 	{
 		//==get PDBEs==
 		o_dat.op_getPDBE(pdbe)->getNodeID(conNID);
-		if (conNID[3]!=conNID[2])
+		for (int i = 0; i < 4; i++)
 		{
-			//====================3D quad 4N PDBE===================
-			assemblePDBEworkQuad4NElement_CSRformat(o_dat, U_N, conNID,xN, N, mNt, Nmat, f_mNt, f_mNt_Nm, f_mNt_Nm_D);
+			o_dat.op_getNode(conNID[i] - 1)->getcoor(xN[i]);
+		}
+		//=== integration===
+		normMatArea(Nmat, conNID, xN);
+		matoperat.matMultiply(Nmat, cop_D, ND);
+		if (conNID[3]==conNID[2])
+		{
+			numN = 3;
 		}
 		else
 		{
-			//====================3D tri 3N PDBE===================
-			assemblePDBEworkTri3NElement_CSRformat(o_dat, U_N, conNID, xN, tri_mNt, tri_mNtN, tri_mNt_N_D);
+			numN = 4;
 		}
+		for (int ei = 0; ei < numN; ei++)
+		{
+			famiID = o_dat.op_getNode(conNID[ei] - 1)->getFamID();
+			temP_fami = o_dat.op_getFami(famiID - 1);
+			numNodeFam = temP_fami->getNumNode();
+			C = new Matrix(6, 3 * numNodeFam);
+			finMat = new Matrix(3, 3 * numNodeFam);
+			matC3D(C, temP_fami, o_dat);
+			matoperat.matMultiply(ND, C, finMat);
+			//=======assembling======
+			for (int j = 0; j < 3; j++)
+			{
+				eqIndex_row = o_dat.op_getNode(conNID[ei] - 1)->op_getDof(j)->i_getEqInde();
+				if (eqIndex_row != -1)
+				{
+					for (int m = 0; m < numNodeFam; m++)
+					{
+						NID_m = temP_fami->getNodeID(m);
+						for (int jj = 0; jj < 3; jj++)
+						{
+							temp = finMat->d_getCoeff(j, 3 * m + jj);
+							if (o_dat.ci_solvFlag == 1)
+							{
+								//static solver
+								eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+								if (eqIndex_col != -1)
+								{
+									i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+								}
+								else
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+									cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+								}
+							}
+							else if (o_dat.ci_solvFlag == 2)
+							{
+								//quasi-static solver;
+								eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+								//==internal force==may modified later;
+								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+								cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+								//===Ku and Ku*du;
+								if (eqIndex_col != -1)
+								{
+									i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+								}
+								//else
+								//{
+								//	//no need this part, as du is added into value of dof;
+								//	//= may modified later;
+								//	tempu = U_N[(NID_m - 1) * numDime + jj];// caution: here U_N is du;
+								//	cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+								//}
+							}
+							else
+							{
+								//dynamic solver
+								if (!o_dat.cb_Newmark)
+								{
+									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+									cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+								}
+								else
+								{
+									//Newmark method;
+									//tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->d_getValue();
+									//for residule force;
+									tempu = U_N[(NID_m - 1) * numDime + jj];
+									cdp_F[eqIndex_row] = cdp_F[eqIndex_row] - temp * tempu;
+									//for KN
+									eqIndex_col = o_dat.op_getNode(NID_m - 1)->op_getDof(jj)->i_getEqInde();
+									if (eqIndex_col != -1)
+									{
+										i_temp = findCSRIndexOfMat(eqIndex_row, eqIndex_col);
+										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+									}
+								}
+							}
 
+						}
+					}
+				}
+			}
+			//===finish assembling for this ei-th node;
+			// delete;
+			delete C, delete finMat;
+			C = NULL, finMat = NULL;
+		}
 	}
-	//====================3D tri 3N PDBE===================
-	delete mNt, delete Nmat, delete f_mNt, delete f_mNt_Nm, delete f_mNt_Nm_D;
-	mNt = NULL, Nmat = NULL, f_mNt = NULL, f_mNt_Nm = NULL, f_mNt_Nm_D = NULL;
-	//====================3D tri 3N PDBE===================
+	
+	delete  ND;
+	delete Nmat;
+}
+
+void pdsolve::normMatArea(Matrix* Nmat, int conNid[], double xN[][3])
+{
+	double area;
+	double v1[3], v2[3], w = 1.0 / 3;
 	for (int i = 0; i < 3; i++)
 	{
-		delete tri_mNt[i], delete tri_mNtN[i];
-		tri_mNt[i] = NULL, tri_mNtN[i] = NULL;
+		v1[i] = xN[1][i] - xN[0][i];
+		v2[i] = xN[2][i] - xN[0][i];
 	}
-	delete  tri_mNt_N_D;
-	tri_mNt_N_D = NULL;
+	double N1, N2, N3, A1=0,A2=0, tmpN1, tmpN2, tmpN3;
+	N1 = v1[1] * v2[2] - v1[2] * v2[1];
+	N2 = v2[0] * v1[2] - v1[0] * v2[2];
+	N3 = v1[0] * v2[1] - v2[0] * v1[1];
+	A1 = sqrt(N1 * N1 + N2 * N2 + N3 * N3);
+	if (A1==0)
+	{
+		printf("Error: Area is zero!\n");
+		exit(0);
+	}
+	
+	if (conNid[3]!=conNid[2])
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			v1[i] = xN[3][i] - xN[0][i];
+			v2[i] = xN[2][i] - xN[0][i];
+		}
+		tmpN1 = v1[1] * v2[2] - v1[2] * v2[1];
+		tmpN2 = v2[0] * v1[2] - v1[0] * v2[2];
+		tmpN3 = v1[0] * v2[1] - v2[0] * v1[1];
+		A2 = sqrt(tmpN1 * tmpN1 + tmpN2 * tmpN2 + tmpN3 * tmpN3);
+		w = 0.25;
+	}
+	
+	area = (A1 + A2) * 0.5;
+
+	N1 = N1 / A1 * area * w;
+	N2 = N2 / A1 * area * w;
+	N3 = N3 / A1 * area * w;
+	Nmat->zero();
+	Nmat->setCoeff(0, 0, N1);
+	Nmat->setCoeff(1, 1, N2);
+	Nmat->setCoeff(2, 2, N3);
+	Nmat->setCoeff(0, 3, N2);
+	Nmat->setCoeff(0, 5, N3);
+	Nmat->setCoeff(1, 3, N1);
+	Nmat->setCoeff(1, 4, N3);
+	Nmat->setCoeff(2, 4, N2);
+	Nmat->setCoeff(2, 5, N1);
+	area = A2 * 0.5;
 }
 
 void pdsolve::assemblePDBEworkQuad4NElement_CSRformat(datModel& o_dat, double* U_N,int conNID[],double xN[][3], double N[],Matrix *mNt,Matrix * Nmat, Matrix* f_mNt, Matrix* f_mNt_Nm, Matrix* f_mNt_Nm_D)
@@ -2626,6 +3691,360 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 		bool bL1_isPDNODE, bL2_isPDNODE;
 		int numNodeFam, famkk;
 		int eqIndex_row[2], eqIndex_col[2];
+		//for (int bL = startP; bL < endP; bL++)
+		//{
+		//	o_dat.op_getPDBE(bL)->getNodeID(bLinNID);
+		//	bL1_isPDNODE = o_dat.op_getNode(bLinNID[0] - 1)->getNodeType();
+		//	bL2_isPDNODE = o_dat.op_getNode(bLinNID[1] - 1)->getNodeType();
+		//	if (bL1_isPDNODE == false || bL2_isPDNODE == false)
+		//	{
+		//		cout << "Warning: This node of PD domain boundary is not PD node!" << endl;
+		//		exit(0);
+		//	}
+		//	o_dat.op_getNode(bLinNID[0] - 1)->getcoor(xL1);
+		//	o_dat.op_getNode(bLinNID[1] - 1)->getcoor(xL2);
+		//	nx = xL2[1] - xL1[1];
+		//	ny = xL1[0] - xL2[0];
+		//	N->setCoeff(0, 0, nx);
+		//	N->setCoeff(0, 2, ny);
+		//	N->setCoeff(1, 1, ny);
+		//	N->setCoeff(1, 2, nx);
+		//	//=============t1=================
+		//	famkk = o_dat.op_getNode(bLinNID[0] - 1)->getFamID() - 1;
+		//	temP_fami = o_dat.op_getFami(famkk);
+		//	numNodeFam = temP_fami->getNumNode();
+		//	C = new Matrix(3, 2 * numNodeFam);
+		//	DC = new Matrix(3, 2 * numNodeFam);
+		//	NDC = new Matrix(2, 2 * numNodeFam);
+		//	matC2D(C, temP_fami, o_dat);
+		//	matoperat.matMultiply(cop_D, C, DC);
+		//	matoperat.matMultiply(N, DC, NDC);
+		//	//u1;
+		//	for (int i = 0; i < 2; i++)
+		//	{
+		//		eqIndex_row[i] = o_dat.op_getNode(bLinNID[0] - 1)->op_getDof(i)->i_getEqInde();
+		//		if (eqIndex_row[i] != -1)
+		//		{
+		//			for (int m = 0; m < numNodeFam; m++)
+		//			{
+		//				NID_m = temP_fami->getNodeID(m);
+		//				for (int j = 0; j < 2; j++)
+		//				{
+		//					temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
+		//					if (o_dat.ci_solvFlag == 1)
+		//					{
+		//						//static solver
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						else 
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//					}
+		//					else if (o_dat.ci_solvFlag == 2)
+		//					{
+		//						//quasi-static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						//==internal force==may modified later;
+		//						tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//===Ku and Ku*du;
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						//else
+		//						//{
+		//						//	//no need this part, as du is added into value of dof;
+		//						//	//= may modified later;
+		//						//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
+		//						//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//}
+		//					}
+		//					else
+		//					{
+		//						//dynamic solver;
+		//						if (!o_dat.cb_Newmark)
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//						else
+		//						{
+		//							//Newmark method
+		//							//for residule force
+		//							tempu = U_N[(NID_m - 1) * numDime + j];
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//							//for KN
+		//							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//							if (eqIndex_col[j] != -1)
+		//							{
+		//								i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//								cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//							}
+		//						}
+		//						
+		//					}
+		//					
+		//				}
+		//			}
+		//		}
+		//	}
+		//	//u2; node 2
+		//	for (int i = 0; i < 2; i++)
+		//	{
+		//		eqIndex_row[i] = o_dat.op_getNode(bLinNID[1] - 1)->op_getDof(i)->i_getEqInde();
+		//		if (eqIndex_row[i] != -1)
+		//		{
+		//			for (int m = 0; m < numNodeFam; m++)
+		//			{
+		//				NID_m = temP_fami->getNodeID(m);
+		//				for (int j = 0; j < 2; j++)
+		//				{
+		//					temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
+		//					if (o_dat.ci_solvFlag == 1)
+		//					{
+		//						//static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						else
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//					}
+		//					else if (o_dat.ci_solvFlag == 2)
+		//					{
+		//						//quasi-static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						//==internal force==may modified later;
+		//						tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//===Ku and Ku*du;
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						//else
+		//						//{
+		//						//	//no need this part, as du is added into value of dof;
+		//						//	//= may modified later;
+		//						//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
+		//						//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//}
+		//					}
+		//					else
+		//					{
+		//						if (!o_dat.cb_Newmark)
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//						else
+		//						{
+		//							//Newmark method
+		//							//for residule force
+		//							tempu = U_N[(NID_m - 1) * numDime + j];
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//							//for KN
+		//							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//							if (eqIndex_col[j] != -1)
+		//							{
+		//								i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//								cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//							}
+		//						}
+		//					}
+		//					
+		//				}
+		//			}
+		//		}
+		//	}
+		//	delete C, delete DC, delete NDC;
+		//	C = NULL; DC = NULL; NDC = NULL;
+		//	//===========t2**** node 2========
+		//	famkk = o_dat.op_getNode(bLinNID[1] - 1)->getFamID() - 1;
+		//	temP_fami = o_dat.op_getFami(famkk);
+		//	numNodeFam = temP_fami->getNumNode();
+		//	C = new Matrix(3, 2 * numNodeFam);
+		//	DC = new Matrix(3, 2 * numNodeFam);
+		//	NDC = new Matrix(2, 2 * numNodeFam);
+		//	matC2D(C, temP_fami, o_dat);
+		//	matoperat.matMultiply(cop_D, C, DC);
+		//	matoperat.matMultiply(N, DC, NDC);
+		//	//u1; node 1
+		//	for (int i = 0; i < 2; i++)
+		//	{
+		//		eqIndex_row[i] = o_dat.op_getNode(bLinNID[0] - 1)->op_getDof(i)->i_getEqInde();
+		//		if (eqIndex_row[i] != -1)
+		//		{
+		//			for (int m = 0; m < numNodeFam; m++)
+		//			{
+		//				NID_m = temP_fami->getNodeID(m);
+		//				for (int j = 0; j < 2; j++)
+		//				{
+		//					
+		//					temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
+		//					if (o_dat.ci_solvFlag == 1)
+		//					{
+		//						//static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						else
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//					}
+		//					else if (o_dat.ci_solvFlag == 2)
+		//					{
+		//						//quasi-static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						//==internal force==may modified later;
+		//						tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//===Ku and Ku*du;
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						//else
+		//						//{
+		//						//	//no need this part, as du is added into value of dof;
+		//						//	//= may modified later;
+		//						//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
+		//						//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//}
+		//					}
+		//					else
+		//					{
+		//						//dynamic solver;
+		//						if (!o_dat.cb_Newmark)
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//						else
+		//						{
+		//							//Newmark method
+		//							//for residule force
+		//							tempu = U_N[(NID_m - 1) * numDime + j];
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//							//for KN
+		//							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//							if (eqIndex_col[j] != -1)
+		//							{
+		//								i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//								cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//							}
+		//							
+		//						}
+		//						/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
+		//					}
+		//					
+		//				}
+		//			}
+		//		}
+		//	}
+		//	//u2; node 2===========
+		//	for (int i = 0; i < 2; i++)
+		//	{
+		//		eqIndex_row[i] = o_dat.op_getNode(bLinNID[1] - 1)->op_getDof(i)->i_getEqInde();
+		//		if (eqIndex_row[i] != -1)
+		//		{
+		//			for (int m = 0; m < numNodeFam; m++)
+		//			{
+		//				NID_m = temP_fami->getNodeID(m);
+		//				for (int j = 0; j < 2; j++)
+		//				{
+		//					temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
+		//					if (o_dat.ci_solvFlag == 1)
+		//					{
+		//						//static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						else
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//					}
+		//					else if (o_dat.ci_solvFlag == 2)
+		//					{
+		//						//quasi-static solver;
+		//						eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//						//==internal force==may modified later;
+		//						tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//===Ku and Ku*du;
+		//						if (eqIndex_col[j] != -1)
+		//						{
+		//							i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//							cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//						}
+		//						//else
+		//						//{
+		//						//	//no need this part, as du is added into value of dof;
+		//						//	//= may modified later;
+		//						//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
+		//						//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						//}
+		//					}
+		//					else
+		//					{
+		//						// dynamic solver;
+		//						if (!o_dat.cb_Newmark)
+		//						{
+		//							tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//						}
+		//						else
+		//						{
+		//							//Newmark method
+		//							//for residule force
+		//							tempu = U_N[(NID_m - 1) * numDime + j];
+		//							cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
+		//							//for KN
+		//							eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
+		//							if (eqIndex_col[j] != -1)
+		//							{
+		//								i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
+		//								cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
+		//							}
+		//							
+		//						}
+		//						/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
+		//						cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
+		//					}
+		//				}
+		//			}
+		//		}
+		//	}
+		//	delete C, delete DC, delete NDC;
+		//	C = NULL; DC = NULL; NDC = NULL;
+		//}
+
 		for (int bL = startP; bL < endP; bL++)
 		{
 			o_dat.op_getPDBE(bL)->getNodeID(bLinNID);
@@ -2665,7 +4084,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 						NID_m = temP_fami->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
-							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
+							temp = 1.0 / 2 * NDC->d_getCoeff(i, 2 * m + j);
 							if (o_dat.ci_solvFlag == 1)
 							{
 								//static solver
@@ -2675,7 +4094,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
 									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
 								}
-								else 
+								else
 								{
 									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
 									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
@@ -2724,86 +4143,9 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
 									}
 								}
-								
-							}
-							
-						}
-					}
-				}
 
-			}
-			//u2; node 2
-			for (int i = 0; i < 2; i++)
-			{
-				eqIndex_row[i] = o_dat.op_getNode(bLinNID[1] - 1)->op_getDof(i)->i_getEqInde();
-				if (eqIndex_row[i] != -1)
-				{
-					for (int m = 0; m < numNodeFam; m++)
-					{
-						NID_m = temP_fami->getNodeID(m);
-						for (int j = 0; j < 2; j++)
-						{
-							temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag == 1)
-							{
-								//static solver;
-								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-								if (eqIndex_col[j] != -1)
-								{
-									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-								}
-								else
-								{
-									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								}
 							}
-							else if (o_dat.ci_solvFlag == 2)
-							{
-								//quasi-static solver;
-								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-								//==internal force==may modified later;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								//===Ku and Ku*du;
-								if (eqIndex_col[j] != -1)
-								{
-									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-								}
-								//else
-								//{
-								//	//no need this part, as du is added into value of dof;
-								//	//= may modified later;
-								//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
-								//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								//}
-							}
-							else
-							{
-								if (!o_dat.cb_Newmark)
-								{
-									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								}
-								else
-								{
-									//Newmark method
-									//for residule force
-									tempu = U_N[(NID_m - 1) * numDime + j];
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-									//for KN
-									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-									if (eqIndex_col[j] != -1)
-									{
-										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-									}
 
-								}
-							}
-							
 						}
 					}
 				}
@@ -2821,88 +4163,6 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 			matC2D(C, temP_fami, o_dat);
 			matoperat.matMultiply(cop_D, C, DC);
 			matoperat.matMultiply(N, DC, NDC);
-			//u1; node 1
-			for (int i = 0; i < 2; i++)
-			{
-				eqIndex_row[i] = o_dat.op_getNode(bLinNID[0] - 1)->op_getDof(i)->i_getEqInde();
-				if (eqIndex_row[i] != -1)
-				{
-					for (int m = 0; m < numNodeFam; m++)
-					{
-						NID_m = temP_fami->getNodeID(m);
-						for (int j = 0; j < 2; j++)
-						{
-							
-							temp = 1.0 / 6 * NDC->d_getCoeff(i, 2 * m + j);
-							if (o_dat.ci_solvFlag == 1)
-							{
-								//static solver;
-								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-								if (eqIndex_col[j] != -1)
-								{
-									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-								}
-								else
-								{
-									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								}
-							}
-							else if (o_dat.ci_solvFlag == 2)
-							{
-								//quasi-static solver;
-								eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-								//==internal force==may modified later;
-								tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								//===Ku and Ku*du;
-								if (eqIndex_col[j] != -1)
-								{
-									i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-									cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-								}
-								//else
-								//{
-								//	//no need this part, as du is added into value of dof;
-								//	//= may modified later;
-								//	tempu = U_N[(NID_m - 1) * numDime + j];// caution: here U_N is du;
-								//	cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								//}
-							}
-							else
-							{
-								//dynamic solver;
-								if (!o_dat.cb_Newmark)
-								{
-									tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-								}
-								else
-								{
-									//Newmark method
-									//for residule force
-									tempu = U_N[(NID_m - 1) * numDime + j];
-									cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;
-									//for KN
-									eqIndex_col[j] = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->i_getEqInde();
-									if (eqIndex_col[j] != -1)
-									{
-										i_temp = findCSRIndexOfMat(eqIndex_row[i], eqIndex_col[j]);
-										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
-									}
-
-									
-								}
-								/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
-								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
-							}
-							
-						}
-					}
-				}
-
-			}
 			//u2; node 2===========
 			for (int i = 0; i < 2; i++)
 			{
@@ -2914,7 +4174,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 						NID_m = temP_fami->getNodeID(m);
 						for (int j = 0; j < 2; j++)
 						{
-							temp = 1.0 / 3 * NDC->d_getCoeff(i, 2 * m + j);
+							temp = 1.0 / 2 * NDC->d_getCoeff(i, 2 * m + j);
 							if (o_dat.ci_solvFlag == 1)
 							{
 								//static solver;
@@ -2973,7 +4233,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 										cdp_Ku[i_temp] = cdp_Ku[i_temp] + temp;
 									}
 
-									
+
 								}
 								/*tempu = o_dat.op_getNode(NID_m - 1)->op_getDof(j)->d_getValue();
 								cdp_F[eqIndex_row[i]] = cdp_F[eqIndex_row[i]] - temp * tempu;*/
@@ -2986,6 +4246,7 @@ void pdsolve::assemblePDBEwork_CSRformat(datModel& o_dat,double* U_N)
 			delete C, delete DC, delete NDC;
 			C = NULL; DC = NULL; NDC = NULL;
 		}
+
 		delete N;
 		N = NULL;
 	}
@@ -3318,7 +4579,8 @@ void pdsolve::assembleMassMatPD_CSRformat(datModel& o_dat)
 	for (int famkk = startP; famkk < endP; famkk++)
 	{
 		Nid_k = o_dat.op_getFami(famkk)->getNodeID(0);
-		dv = o_dat.op_getNode(Nid_k - 1)->getvolume();
+		//dv = o_dat.op_getNode(Nid_k - 1)->getvolume();
+		dv = o_dat.op_getFami(famkk)->cd_v;
 		for (int i = 0; i < numDime; i++)
 		{
 			eqIndex = o_dat.op_getNode(Nid_k - 1)->op_getDof(i)->i_getEqInde();
@@ -3382,7 +4644,7 @@ void pdsolve::assembleLumpedMass(datModel& o_dat, int numEqua)
 			o_dat.op_getNode(conNID[nd] - 1)->getcoor(xN[nd]);
 		}
 		//Gauss integration to get element volumn
-		VolEle = o_dat.op_getEles(ele)->eleVolume(xN);
+		VolEle = o_dat.op_getEles(ele)->cd_V;
 		dv = VolEle / numNodeELE;
 		for (int nd = 0; nd < numNodeELE; nd++)
 		{
@@ -3515,6 +4777,42 @@ void pdsolve::matMathcalNt_trian(Matrix* mNt[])
 	}
 }
 
+double pdsolve::detJacobi_quad(double xN[][3], double p, double q)
+{
+	double J[2][2] = { 0.0 };
+	double dNdp[4], dNdq[4];
+
+	dNdp[0] = 0.25 * (-1 + q);
+	dNdp[1] = 0.25 * (1 - q);
+	dNdp[2] = 0.25 * (1 + q);
+	dNdp[3] = 0.25 * (-1 - q);
+
+	dNdq[0] = 0.25 * (-1 + p);
+	dNdq[1] = 0.25 * (-1 - p);
+	dNdq[2] = 0.25 * (1 + p);
+	dNdq[3] = 0.25 * (1 - p);
+
+	for (int i = 0; i < 4; i++)
+	{
+		J[0][0] = J[0][0] + dNdp[i] * xN[i][0];
+		J[0][1] = J[0][1] + dNdp[i] * xN[i][1];
+		J[1][0] = J[1][0] + dNdq[i] * xN[i][0];
+		J[1][1] = J[1][1] + dNdq[i] * xN[i][1];
+	}
+
+	double detJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+
+	return abs(detJ);
+}
+
+void pdsolve::shapeFunction_quad(double N[], double p, double q)
+{
+	N[0] = 0.25 * (1 - p) * (1 - q);
+	N[1] = 0.25 * (1 + p) * (1 - q);
+	N[2] = 0.25 * (1 + p) * (1 + q);
+	N[3] = 0.25 * (1 - p) * (1 + q);
+}
+
 void pdsolve::assembleSEDbyFEM(datModel & o_dat)
 {
 	// By traditional FEM
@@ -3590,7 +4888,7 @@ void pdsolve::assembleSEDbyFEM_CSRformat(datModel& o_dat, double* U_N)
 	endP = (ci_rank + 1) * totNumFE / ci_numProce;
 
 	Matrix* Ke;
-	int algoType, numDime;
+	int numDime;
 	numDime = o_dat.ci_Numdimen;
 
 	int numNode, ele;
@@ -3961,10 +5259,10 @@ void pdsolve::assembleElemassMatFEM(datModel & o_dat, ofstream & test)
 	}
 }
 
-void pdsolve::setVaryEssentialBC(datModel & o_dat)
+void pdsolve::setVaryEssentialBC(datModel & o_dat,double rati)
 {
 	// displacement increasing boundary condition, for dynamic or quasi-static solver;
-	double dt, Uval;
+	double dt, Uval, dv;
 	dt = o_dat.getTstep();
 	int numEBCs, numNODE, i_dof, Nid;
 	numEBCs = o_dat.getTotnumEssentialBCs();
@@ -3972,7 +5270,34 @@ void pdsolve::setVaryEssentialBC(datModel & o_dat)
 	{
 		if (o_dat.op_getEssenBC(i)->cb_varing)
 		{
-			Uval = o_dat.op_getEssenBC(i)->cd_value + dt * o_dat.op_getEssenBC(i)->cd_velocity;
+			if (o_dat.ci_solvFlag==2)
+			{
+				if (o_dat.op_getEssenBC(i)->cd_value==0)
+				{
+					dv = o_dat.op_getEssenBC(i)->cd_velocity;
+				}
+				else
+				{
+					double ndv = (rati - 1) * (o_dat.op_getEssenBC(i)->cd_value);
+					if (fabs(ndv)> fabs(o_dat.op_getEssenBC(i)->cd_velocity))
+					{
+						dv = o_dat.op_getEssenBC(i)->cd_velocity;
+					}
+					else if (rati < 1)
+					{
+						dv = 0;
+					}
+					else
+					{
+						dv = ndv;
+					}
+				}
+			}
+			else
+			{
+				dv= o_dat.op_getEssenBC(i)->cd_velocity;
+			}
+			Uval = o_dat.op_getEssenBC(i)->cd_value + dt * dv;
 			o_dat.op_getEssenBC(i)->cd_value = Uval;
 			numNODE = o_dat.op_getEssenBC(i)->getNumNODE();
 			i_dof = o_dat.op_getEssenBC(i)->getDOF();
@@ -4233,8 +5558,6 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files,cha
 	//argv[2]: number of nodes,
 	//argv[3]: test ID;
 	//argv[4]: V_pd fraction;
-	//Don't need block data any more for static solver;
-	//o_dat.deleteBLOCK();
 	double t1, t2;
 	//================
 	o_dat.ci_solvFlag = 1;// remove later;
@@ -4277,7 +5600,7 @@ void pdsolve::pdfemStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_files,cha
 				cdp_FGlo, Ug->cdp_vecCoeff, &comm);
 	if (ci_rank == 0)
 	{
-		//t2 = MPI_Wtime();
+		t2 = MPI_Wtime();
 		//double memo = (((numEq + 1) + cip_ia[numEq]) * 8.0 + cip_ia[numEq] * 8.0) / 1024;
 		//printf("DATA:time, %f, memo(kb), %f,numNon-zero, %d, testID, %d,nodes, %d, cores, %d, mRatio, %f, Vpdfrac, %d \n", t2 - t1, memo, cip_ia[numEq], atoi(argv[3]), atoi(argv[2]), ci_numProce,o_dat.op_getGeomP()->cd_factor, atoi(argv[4]));
 		printf("Finshed cluster_PARDISO static solving.\n");
@@ -4659,7 +5982,7 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 		}
 	}
 	//==set varied prescribed displacemets;
-	setVaryEssentialBC(o_dat);
+	setVaryEssentialBC(o_dat,1);
 	//==set varied NBC (NBC, not prescribed displacemets); 
 	setVaryNaturalBC(o_dat);
 	//====resultant force;
@@ -4708,7 +6031,7 @@ void pdsolve::pdfemDynamicSolver_CSRformat(datModel& o_dat, fioFiles& o_files, c
 		}
 
 		//==set varied prescribed displacemets;
-		setVaryEssentialBC(o_dat);
+		setVaryEssentialBC(o_dat,1);
 		//==set varied NBC (NBC, not prescribed displacemets); 
 		setVaryNaturalBC(o_dat);
 		//====resultant force;
@@ -4924,7 +6247,7 @@ void pdsolve::pdfemDynamicNewmarkSolver_CSRformat(datModel& o_dat, fioFiles& o_f
 		updateDispVelo(Vu_n, Vv_n, Va_n, Va_np1, numEq, o_dat);
 		storeDisplacementResult(o_dat, Vu_n);
 		//==set varied prescribed displacemets;
-		setVaryEssentialBC(o_dat);
+		setVaryEssentialBC(o_dat,1);
 		//==set varied NBC (NBC, not prescribed displacemets); 
 		setVaryNaturalBC(o_dat);
 		//update acceleration for next step;
@@ -5118,15 +6441,15 @@ void pdsolve::pdfemQuasiStaticAssembleEquasSys_CSRformat(datModel& o_dat, int nu
 		cdp_KuGlo[i] = 0;
 	}
 	//===add load=======================================================
-	//==================================================================
-	if (AddLoad)
-	{
-		//==set varied NBC (NBC, not prescribed displacemets); 
-		setVaryNaturalBC(o_dat);
-		//==set varied prescribed displacemets;
-		setVaryEssentialBC(o_dat);
-	}
-	//=================================================================================
+	////==================================================================
+	//if (AddLoad)
+	//{
+	//	//==set varied NBC (NBC, not prescribed displacemets); 
+	//	setVaryNaturalBC(o_dat);
+	//	//==set varied prescribed displacemets;
+	//	setVaryEssentialBC(o_dat);
+	//}
+	////=================================================================================
 	//====internal force;
 	unique_ptr<double[]> U_N = make_unique<double[]>(1);
 	calinternalForce_CSRformat(o_dat, numEq, U_N.get()); //This function get the internal force and the K simultaneously
@@ -5145,6 +6468,7 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	if (ci_rank == 0)
 	{
 		fout.open(RFfilename);
+		fout << std::left << setiosflags(ios::scientific) << setprecision(4);
 		fout << "Step\t" << "U\t" << "RFx\t" << "RFy\t" << "RFz\n";
 	}
 	//===============================
@@ -5171,6 +6495,12 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	//===============start quasi-static solving==========
 	if (ci_rank == 0)
 	{
+		cracPathout.open(o_dat.cs_fileName + "_cp.out");
+		cracPathout << std::left << setiosflags(ios::scientific) << setprecision(4);
+		if (o_dat.ci_failFlag == 1)
+		{
+			cracPathout << "crack ID\t tip_x\t tip_y \t KI \tKII \t Keq\n";
+		}
 		printf("start to quasi-static solving......\n");
 	}
 	//============get initial step displacement;
@@ -5191,7 +6521,7 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	setCSRIndexes_gloStiffMat(o_dat);
 	bool addLoad = true;
 	int Tk = o_dat.ci_topk;
-	double Keq;
+	double rati=1;
 	//===start loop=============;
 	for (int n = 1; n < numTstep + 1; n++)
 	{
@@ -5219,12 +6549,12 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 		/*==stresses==========*/
 		calGlobalNodeStresses(o_dat);
 		////===updat bond-state by falure criterion=======
-		failureProcess(o_dat, Tk, addLoad, cracPathout);
+		rati=failureProcess(o_dat, Tk, addLoad, cracPathout);
 		//======calculta reaction force if needed;
 		calReacForc(o_dat, fout, n);
 		/*********/
 		//write results===
-		if (n % saveFren == 0 || n == numTstep)
+		if (n % saveFren == 0 || n == numTstep||n==1)
 		{
 			calLocalDamage(o_dat);
 			if (ci_rank == 0)
@@ -5233,6 +6563,15 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 				o_files.writeReslutsTOTAL_vtk(o_dat, to_string(n)); //**set phi
 			}
 		}
+		//==================================================================
+		if (addLoad)
+		{
+			//==set varied NBC (NBC, not prescribed displacemets); 
+			setVaryNaturalBC(o_dat);
+			//==set varied prescribed displacemets;
+			setVaryEssentialBC(o_dat,rati);
+		}
+		//=================================================================================
 	}
 	//release memory;
 	delete Vu_n, delete Vdu;
@@ -5241,7 +6580,12 @@ void pdsolve::pdfemQuasiStaticSolver_CSRformat(datModel& o_dat, fioFiles& o_file
 	delete[] cdp_Ku, delete[]cdp_KuGlo;
 	cip_ia = NULL; cip_ja = NULL, cdp_F = NULL, cdp_FGlo = NULL;
 	cdp_Ku = NULL, cdp_KuGlo = NULL;
-	fout.close();
+	
+	if (ci_rank==0)
+	{
+		cracPathout.close();
+		fout.close();
+	}
 }
 
 double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream& cracPath)
@@ -5251,15 +6595,37 @@ double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream&
 		return 1;
 	}
 	double maxVal = 0;
+	double rati = 1;
+	double tol = 1.0001;
 	if (o_dat.ci_failFlag == 1)
 	{
 		//1--maximum circumferential tensile stress;
 		addLoad = !(b_cracPropag_qusiaStatic_BYKeq(o_dat, cracPath, maxVal));
+		double Kic= o_dat.op_getmaterial()->getKIc();
+		if (fabs(maxVal)<1e-20*Kic)
+		{
+			rati = 1;
+		}
+		else
+		{
+			rati = tol * Kic / maxVal;
+		}
+		
 	}
 	else if (o_dat.ci_failFlag == 2)
 	{
 		//2-- maximum principal stress: return max stress;
 		maxVal = failureCriterion_maxPriSig(o_dat, Tk, addLoad);
+		double sig_ult= o_dat.op_getmaterial()->getSigult();
+		if (fabs(maxVal) < 1e-20 * sig_ult)
+		{
+			rati = 1;
+		}
+		else
+		{
+			rati = tol * sig_ult / maxVal;
+		}
+
 	}
 	//else if (o_dat.ci_failFlag == 3)
 	//{
@@ -5272,7 +6638,7 @@ double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream&
 	//	maxVal = failureCriterion_stress(o_dat, Tk, addLoad);
 	//}
 	
-	return maxVal;
+	return rati;
 }
 
 double pdsolve::failureCriterion_stretch(datModel& o_dat, int Tk, bool& addLoad)
@@ -5336,7 +6702,7 @@ double pdsolve::failureCriterion_stretch(datModel& o_dat, int Tk, bool& addLoad)
 					{
 						delta_m = fac * pow((o_dat.op_getNode(NID_m - 1)->getvolume()), 1.0 / numDime);
 						//delta = 0.5 * (delta_k + delta_m);
-						delta = o_dat.op_getGeomP()->getmaxDelta();
+						delta = o_dat.op_getGeomP()->getminDelta();
 						sc = sqrt(5 * G0 / (9 * kappa * delta));
 						if (s > sc)
 						{
@@ -5735,8 +7101,8 @@ bool pdsolve::Finally_TopK_andUpdate_bondStaus(datModel& o_dat, int Tk, priority
 	{
 		// this part may be parallelize in future;
 		//===block and family
-		double XXk[3], XXm[3], xc[3], crack[3][3] = { 0 }, maxDelta;
-		maxDelta =0.5* o_dat.op_getGeomP()->getmaxDelta();
+		double XXk[3], XXm[3], xc[3], crack[3][3] = { 0 }, minDelta;
+		minDelta =0.5* o_dat.op_getGeomP()->getminDelta();
 		int Nidk, Nidm;
 		int  maxIDX;
 		double sigma_k[6], sigma_m[6], eigV[3] = { 0 }, temp;
@@ -5790,14 +7156,14 @@ bool pdsolve::Finally_TopK_andUpdate_bondStaus(datModel& o_dat, int Tk, priority
 			//=====judge bond===
 			if (numDim==3)
 			{
-				updateBondState_CirclePlane(xc, eigV,maxDelta, o_dat);
+				updateBondState_CirclePlane(xc, eigV, minDelta, o_dat);
 			}
 			else if (numDim == 2)
 			{
-				crack[0][0] = xc[0] - maxDelta * (eigV[1]);
-				crack[0][1] = xc[1] + maxDelta * eigV[0];
-				crack[1][0] = xc[0] + maxDelta * (eigV[1]);
-				crack[1][1] = xc[1] - maxDelta * eigV[0];
+				crack[0][0] = xc[0] - minDelta * (eigV[1]);
+				crack[0][1] = xc[1] + minDelta * eigV[0];
+				crack[1][0] = xc[0] + minDelta * (eigV[1]);
+				crack[1][1] = xc[1] - minDelta * eigV[0];
 				updateBondstate(crack, o_dat);
 			}
 		}
@@ -5828,7 +7194,7 @@ double pdsolve::failureCriterion_maxPriSig(datModel& o_dat, int Tk, bool& addLoa
 	vector<int>mp_fami(numFami);
 	vector<int>mp_fami_glo(numFami);
 	int numNodeOfFami, NID_k, NID_m;
-	double sig[6], sigma_k[6], sigma_m[6], sigma1, sigult, sigma1_max = 0, mu_km;
+	double sigma_k[6], sigma_m[6], sigma1, sigult, sigma1_max = 0, mu_km;
 	sigult = o_dat.op_getmaterial()->getSigult();
 	int Matrc = numDim;
 	Matrix* sigma_kg = new Matrix(Matrc, Matrc);
@@ -6009,10 +7375,10 @@ void pdsolve::calLocalDamage(datModel& o_dat)
 bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath, double &KEQ)
 {
 	bool b_startPropage = false;
-	int* ip_startPropage = new int[o_dat.ci_numCrack];
+	bool* ip_startPropage = new bool[o_dat.ci_numCrack];
 	for (int i = 0; i < o_dat.ci_numCrack; i++)
 	{
-		ip_startPropage[i] = 0;
+		ip_startPropage[i] = false;
 	}
 	//======
 	double blocSize = o_dat.op_getGeomP()->getBlockSize();
@@ -6059,14 +7425,16 @@ bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath
 		famk = o_dat.op_getNode(NID_near1st - 1)->getFamID() - 1;
 		//cout << famk << "================================" << endl;
 		delt = o_dat.op_getFami(famk)->gethorizon() / o_dat.op_getGeomP()->getFactor();
-		R = m_R * delt;
+		R = m_R * delt;//====
 
 		// get SIFs and theta_c;
-		SIFsAndPropaDire(KI, KII, theta_c, R, m_R, o_dat, ck, cracPath);
+		//SIFsAndPropaDire(KI, KII, theta_c, R, m_R, o_dat, ck, cracPath);
+		//SIFsAndPropaDire_GaussIntegr( KI,  KII,  theta_c, R,  o_dat, ck);
+		SIFsAndPropaDire_GaussPointPDnode(KI, KII, theta_c, R, o_dat, ck);
 		Keq = cos(0.5 * theta_c) * (KI * cos(0.5 * theta_c) * cos(0.5 * theta_c) - 1.5 * KII * sin(theta_c));
 		KEQ = Keq;
 		// you may uncomment here to see value;
-		if (ci_rank==0&&o_dat.ci_solvFlag==2)
+		if (ci_rank==0&&o_dat.ci_solvFlag==1)
 		{
 			printf("KI= %e, KII=%e, Keq=%e\n", KI, KII, Keq);
 		}
@@ -6074,14 +7442,14 @@ bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath
 		if (Keq > KIc)
 		{
 			b_startPropage = true;
-			ip_startPropage[ck] = 1;
+			ip_startPropage[ck] = true;
 			//double vec_tip[2] = { (*iter)[2] - (*iter)[0],(*iter)[3] - (*iter)[1] };
 			double vec_tip[2] = { o_dat.cdp_crack[ck][1][0] - o_dat.cdp_crack[ck][0][0], o_dat.cdp_crack[ck][1][1] - o_dat.cdp_crack[ck][0][1] };
 			double alpha = atan2(vec_tip[1], vec_tip[0]);
 			double cracDire[2];
 			cracDire[0] = cos(alpha) * cos(theta_c) - sin(alpha) * sin(theta_c);
 			cracDire[1] = sin(alpha) * cos(theta_c) + cos(alpha) * sin(theta_c);
-			double DeltaMin =o_dat.cd_dcf* o_dat.op_getGeomP()->getmaxDelta();
+			double DeltaMin =o_dat.cd_dcf* o_dat.op_getGeomP()->getminDelta();
 			//double DeltaMin = 1.0e-3;//d_c
 			double xNewTip[2] = { Xtip[0] + cracDire[0] * DeltaMin, Xtip[1] + cracDire[1] * DeltaMin };
 			o_dat.cdp_crack[ck][0][0] = Xtip[0];
@@ -6094,26 +7462,32 @@ bool pdsolve::b_cracPropag_qusiaStatic_BYKeq(datModel& o_dat, ofstream& cracPath
 	//update the bond state;
 	if (o_dat.ci_solvFlag==2)
 	{
+		updateEnrichRegion(ip_startPropage, o_dat);
 		for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
 		{
-			if (ip_startPropage[ck] == 1)
+			if (ip_startPropage[ck])
 			{
 				// you may uncomment here to see value;
-				if (ci_rank == 0 && o_dat.ci_solvFlag == 2)
-				{
-					printf("Xtip =( %e, %e),  XnewTip = (%e, %e) \n", o_dat.cdp_crack[ck][0][0], o_dat.cdp_crack[ck][0][1], o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1]);
-				}
+				//if (ci_rank == 0 && o_dat.ci_solvFlag == 2)
+				//{
+				//	//printf("Xtip =( %e, %e),  XnewTip = (%e, %e) KI= %e, KII=%e, Keq=%e\n", o_dat.cdp_crack[ck][0][0], o_dat.cdp_crack[ck][0][1], o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1], KI, KII, Keq);
+				//}
 				updateBondstate(o_dat.cdp_crack[ck], o_dat);
 			}
 		}
 	}
 
-	// output file path to file
-	for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
+	if (ci_rank==0)
 	{
-		cracPath << o_dat.cdp_crack[ck][1][0] << "\t" << o_dat.cdp_crack[ck][1][1] << "\t";
+		// output file path to file
+		
+		for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
+		{
+			cracPath << ck << "\t" << o_dat.cdp_crack[ck][1][0] << "\t" << o_dat.cdp_crack[ck][1][1] << "\t" << KI << "\t" << KII << "\t" << Keq << " \"***\"\t";
+		}
+		cracPath << endl;
 	}
-	cracPath << endl;
+	
 
 	delete[] ip_startPropage;
 	ip_startPropage = NULL;
@@ -6133,113 +7507,68 @@ void pdsolve::SIFsAndPropaDire(double& KI, double& KII, double& theta_c, double 
 	o_dat.op_getGeomP()->getrtc(rtc);
 	//=============find out the path for integral=========.
 	// using block to search, but if R is too large this way doesn't work;
-	if (m_R < o_dat.op_getGeomP()->getFactor() && m_R>0)
+	int numBlocks[3], blockIndex;
+	o_dat.getNumOfBLock(numBlocks);
+	for (int i = 0; i < 3; i++)
 	{
-		//R is small using block to search element;
-		int numBlocks[3], blockIndex;
-		o_dat.getNumOfBLock(numBlocks);
-		for (int i = 0; i < 3; i++)
+		IDX[i] = (Xtip[i] - lbc[i]) / blockSize;
+	}
+	int numSerchBlock = m_R / (o_dat.op_getGeomP()->cd_factor);
+	numSerchBlock++;
+	for (int idx = IDX[0] - numSerchBlock; idx < IDX[0] + numSerchBlock + 1; idx++)
+	{
+		for (int idy = IDX[1] - numSerchBlock; idy < IDX[1] + numSerchBlock + 1; idy++)
 		{
-			IDX[i] = (Xtip[i] - lbc[i]) / blockSize;
-		}
-		for (int idx = IDX[0] - 1; idx < IDX[0] + 2; idx++)
-		{
-			for (int idy = IDX[1] - 1; idy < IDX[1] + 2; idy++)
+			if (idx >= 0 && idx < (numBlocks[0]) && idy>=0 && idy < (numBlocks[1]))
 			{
-				if (idx >= 0 && idx < (numBlocks[0]) && idy>=0 && idy < (numBlocks[1]))
+				blockIndex = idx + idy * numBlocks[0];
+				numEleoB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+				for (int k = 0; k < numEleoB; k++)
 				{
-					blockIndex = idx + idy * numBlocks[0];
-					numEleoB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
-					for (int k = 0; k < numEleoB; k++)
-					{
-						numNIn = 0;
-						EleID = o_dat.op_getBlock(blockIndex)->getEleoB(k);
+					numNIn = 0;
+					EleID = o_dat.op_getBlock(blockIndex)->getEleoB(k);
 
-						o_dat.op_getEles(EleID - 1)->getConNid(NID);//NID [4], be caution;
-						if (o_dat.op_getEles(EleID - 1)->ci_numNodes==3)
+					o_dat.op_getEles(EleID - 1)->getConNid(NID);//NID [4], be caution;
+					if (o_dat.op_getEles(EleID - 1)->ci_numNodes==3)
+					{
+						NID[3] = NID[2];
+					}
+					nT_J = new int[4];
+					for (int n = 0; n < 4; n++)
+					{
+						nT_J[n] = 1;
+					}
+					for (int n = 0; n < 4; n++)
+					{
+						o_dat.op_getNode(NID[n] - 1)->getcoor(xN[n]);
+						dis = (xN[n][0] - Xtip[0]) * (xN[n][0] - Xtip[0]) + (xN[n][1] - Xtip[1]) * (xN[n][1] - Xtip[1]);
+						if (dis < R * R)
 						{
-							NID[3] = NID[2];
+							nT_J[n] = -1;
+							numNIn++;
 						}
-						nT_J = new int[4];
-						for (int n = 0; n < 4; n++)
-						{
-							nT_J[n] = 1;
-						}
-						for (int n = 0; n < 4; n++)
-						{
-							o_dat.op_getNode(NID[n] - 1)->getcoor(xN[n]);
-							dis = (xN[n][0] - Xtip[0]) * (xN[n][0] - Xtip[0]) + (xN[n][1] - Xtip[1]) * (xN[n][1] - Xtip[1]);
-							if (dis < R * R)
-							{
-								nT_J[n] = -1;
-								numNIn++;
-							}
-						}
-						if (numNIn == 0 || numNIn == 4 || numNIn == 3)
-						{
-							delete[] nT_J;
-							nT_J = NULL;
-						}
-						else
-						{
-							v_NoType_Jinte.push_back(nT_J);
-							v_ele.push_back(EleID);
-						}
+					}
+					if (numNIn == 0 || numNIn == 4 || numNIn == 3)
+					{
+						delete[] nT_J;
+						nT_J = NULL;
+					}
+					else
+					{
+						v_NoType_Jinte.push_back(nT_J);
+						v_ele.push_back(EleID);
 					}
 				}
 			}
 		}
 	}
-	else
-	{
-		// if R is too large, search all PD element;
-		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
-		{
-			if (o_dat.op_getEles(ele)->getAlgoType() == 1)
-			{
-				//PD element;
-				numNIn = 0;
-				EleID = ele + 1;
-				o_dat.op_getEles(ele)->getConNid(NID);//NID [4], be caution;
-				if (o_dat.op_getEles(ele)->ci_numNodes == 3)
-				{
-					NID[3] = NID[2];
-				}
-				nT_J = new int[4];
-				for (int n = 0; n < 4; n++)
-				{
-					nT_J[n] = 1;
-				}
-				for (int n = 0; n < 4; n++)
-				{
-					o_dat.op_getNode(NID[n] - 1)->getcoor(xN[n]);
-					dis = (xN[n][0] - Xtip[0]) * (xN[n][0] - Xtip[0]) + (xN[n][1] - Xtip[1]) * (xN[n][1] - Xtip[1]);
-					if (dis < R * R)
-					{
-						nT_J[n] = -1;
-						numNIn++;
-					}
-				}
-				if (numNIn == 0 || numNIn == 4 || numNIn == 3)
-				{
-					delete[] nT_J;
-					nT_J = NULL;
-				}
-				else
-				{
-					v_NoType_Jinte.push_back(nT_J);
-					v_ele.push_back(EleID);
-				}
-			}
-		}
-	}
-
+	
 
 	//======J_integral to get K_I and K_II====
 	double I_m1 = 0, I_m2 = 0, temp_I1, temp_I2, d_J = 0, temp_J;
 	int numPath = v_ele.size();
 	int nNext;
-	double vp[2], vt[2], normV[2], temp;
+	//double vp[2], vt[2], normV[2], temp;
 	for (int i = 0; i < numPath; i++)
 	{
 		EleID = v_ele[i];
@@ -6268,34 +7597,31 @@ void pdsolve::SIFsAndPropaDire(double& KI, double& KII, double& theta_c, double 
 				if (nT_J[nNext] == 1)
 				{
 					//==get normal vector;
-					//printf("eleID=%d, NID1=%d, NID2=%d ", EleID, NID[n], NID[nNext]);
 					if (NID[n] != NID[nNext]) // not triangle PD element
 					{
-						for (int ii = 0; ii < 2; ii++)
-						{
-							vp[ii] = xN[nNext][ii] - xN[n][ii];
-							vt[ii] = xN[nNext][ii] - Xtip[ii];
-						}
-						temp = vp[0] * vt[1] - vp[1] * vt[0];
-						if (temp > 0)
-						{
-							normV[0] = -vp[1];  // this norm vector is not unit norm vector;
-							normV[1] = vp[0];
-						}
-						else if (temp < 0)
-						{
-							normV[0] = vp[1];
-							normV[1] = -vp[0];
-						}
-						else
-						{
-							cout << "Error: crack tip located on J integral path" << endl;
-							exit(0);
-						}
-						//printf(" normal vector=%f,%f\n", normV[0], normV[1]);
+						//for (int ii = 0; ii < 2; ii++)
+						//{
+						//	vp[ii] = xN[nNext][ii] - xN[n][ii];
+						//	vt[ii] = xN[nNext][ii] - Xtip[ii];
+						//}
+						//temp = vp[0] * vt[1] - vp[1] * vt[0];
+						//if (temp > 0)
+						//{
+						//	normV[0] = -vp[1];  // this norm vector is not unit norm vector;
+						//	normV[1] = vp[0];
+						//}
+						//else if (temp < 0)
+						//{
+						//	normV[0] = vp[1];
+						//	normV[1] = -vp[0];
+						//}
+						//else
+						//{
+						//	cout << "Error: crack tip located on J integral path" << endl;
+						//	exit(0);
+						//}
 						// calculate KI and KII;
-						//Jintegrand(temp_I1, temp_I2, temp_J, NID[n], NID[nNext], normV, cracTip, o_dat, test);
-						Jintegrand(temp_I1, temp_I2, temp_J, NID[n], NID[nNext], normV, ck, o_dat, fout);
+						Jintegrand(temp_I1, temp_I2, temp_J, NID[n], NID[nNext],1.0,1.0, ck, o_dat, fout);
 						I_m1 = I_m1 + temp_I1;
 						I_m2 = I_m2 + temp_I2;
 						d_J = d_J + temp_J;
@@ -6365,8 +7691,36 @@ void pdsolve::SIFsAndPropaDire(double& KI, double& KII, double& theta_c, double 
 
 }
 
-void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int NID2, double norV[], int ck, datModel& o_dat, ofstream& fout)
+void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int NID2, double q0, double q1, int ck, datModel& o_dat, ofstream& fout)
 {
+	//====determin norm vector
+	double Xtip[3] = { o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1],o_dat.cdp_crack[ck][1][2] };
+	double vp[3], vt[3], norV[3], temp, xN[2][3];
+	o_dat.op_getNode(NID1 - 1)->getcoor(xN[0]);// NID1-- n;
+	o_dat.op_getNode(NID2 - 1)->getcoor(xN[1]);//NID2-- next;
+	for (int ii = 0; ii < 2; ii++)
+	{
+		vp[ii] = xN[1][ii] - xN[0][ii];
+		vt[ii] = xN[1][ii] - Xtip[ii];
+	}
+	temp = vp[0] * vt[1] - vp[1] * vt[0];
+	if (temp > 0)
+	{
+		norV[0] = -vp[1];  // this norm vector is not unit norm vector;
+		norV[1] = vp[0];
+	}
+	else if (temp < 0)
+	{
+		norV[0] = vp[1];
+		norV[1] = -vp[0];
+	}
+	else
+	{
+		cout << "Error: crack tip located on J integral path" << endl;
+		exit(0);
+	}
+
+
 	int proType = o_dat.getProType();
 	double E = o_dat.op_getmaterial()->getE();
 	double nu = o_dat.op_getmaterial()->getnu();
@@ -6403,7 +7757,7 @@ void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int
 		sigma_glo[i][2] = sig_t[i][3];
 	}
 	//==find r and theta====
-	double XoldTip[3], XnewTip[3], vt[3];
+	double XoldTip[3], XnewTip[3]/*, vt[3]*/;
 	/*XoldTip[0] = cracTip[0]; XoldTip[1] = cracTip[1];
 	XnewTip[0] = cracTip[2]; XnewTip[1] = cracTip[3];*/
 	for (int i = 0; i < 3; i++)
@@ -6412,10 +7766,10 @@ void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int
 		XnewTip[i] = o_dat.cdp_crack[ck][1][i];
 		vt[i] = XnewTip[i] - XoldTip[i];
 	}
-	double xN[2][3], vp[3], alpha, vpT[3];
+	double /*xN[2][3], vp[3],*/ alpha, vpT[3];
 	alpha = atan2(vt[1], vt[0]);
-	o_dat.op_getNode(NID1 - 1)->getcoor(xN[0]);
-	o_dat.op_getNode(NID2 - 1)->getcoor(xN[1]);
+	/*o_dat.op_getNode(NID1 - 1)->getcoor(xN[0]);
+	o_dat.op_getNode(NID2 - 1)->getcoor(xN[1]);*/
 	for (int i = 0; i < 2; i++)
 	{
 		for (int j = 0; j < 2; j++)
@@ -6514,7 +7868,963 @@ void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int
 		ThirItem[i] = sig_m1[i][0] * PUxPx_loc[i] * n_loc[0] + sig_m1[i][2] * (PUxPx_loc[i] * n_loc[1] + PUyPx_loc[i] * n_loc[0]) + sig_m1[i][1] * PUyPx_loc[i] * n_loc[1];
 	}
 	//== get I_m1==;
-	I_m1 = (w_m1[0] + w_m1[1]) * 0.5 - (secItem[0] + secItem[1]) * 0.5 - (ThirItem[0] + ThirItem[1]) * 0.5;
+	I_m1 = (w_m1[0]*q0 + w_m1[1]*q1) * 0.5 - (secItem[0]*q0 + secItem[1]*q1) * 0.5 - (ThirItem[0]*q0 + ThirItem[1]*q1) * 0.5;
+	//================MODE II=======================================
+	//== mode 2; interaction strain energy
+	for (int i = 0; i < 2; i++)
+	{
+		sig_m2[i][0] = -1.0 / sqrt(2 * PI * r[i]) * sin(0.5 * theta[i]) * (2 + cos(0.5 * theta[i]) * cos(1.5 * theta[i]));
+		sig_m2[i][1] = 1.0 / sqrt(2 * PI * r[i]) * sin(0.5 * theta[i]) * cos(0.5 * theta[i]) * cos(1.5 * theta[i]);
+		sig_m2[i][2] = 1.0 / sqrt(2 * PI * r[i]) * cos(0.5 * theta[i]) * (1 - sin(0.5 * theta[i]) * sin(1.5 * theta[i]));
+		if (proType == 1)
+		{
+			sig_z = 0;  // plane stress;
+		}
+		else if (proType == 2)
+		{
+			sig_z = nu * (sig_m1[i][0] + sig_m1[i][1]);  // plane strain;
+		}
+		eps_m2[i][0] = 1.0 / E * (sig_m2[i][0] - nu * (sig_m2[i][1] + sig_z));
+		eps_m2[i][1] = 1.0 / E * (sig_m2[i][1] - nu * (sig_m2[i][0] + sig_z));
+		eps_m2[i][2] = sig_m2[i][2] * (1 + nu) / E;
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		w_m2[i] = (sigma_loc[i][0] * eps_m2[i][0] + sigma_loc[i][1] * eps_m2[i][1] + 2 * sigma_loc[i][2] * eps_m2[i][2]) * n_loc[0];
+	}
+	//===Mode 2, the second Item;
+	double PuxPx_m2[2], PuyPx_m2[2];
+	for (int i = 0; i < 2; i++)
+	{
+		PuxPx_m2[i] = (1 + nu) / E / sqrt(2 * PI * r[i]) * sin(0.5 * theta[i]) * (sin(theta[i]) * sin(theta[i]) - cos(0.5 * theta[i]) * cos(0.5 * theta[i]) - 0.5 * (kappa + 1));
+		PuyPx_m2[i] = (1 + nu) / E / sqrt(2 * PI * r[i]) * cos(0.5 * theta[i]) * (-sin(0.5 * theta[i]) * sin(1.5 * theta[i]) - 0.5 * (kappa - 1));
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		secItem[i] = sigma_loc[i][0] * PuxPx_m2[i] * n_loc[0] + sigma_loc[i][2] * (PuxPx_m2[i] * n_loc[1] + PuyPx_m2[i] * n_loc[0]) + sigma_loc[i][1] * PuyPx_m2[i] * n_loc[1];
+	}
+	//===Mode 2, the Third Item;
+	for (int i = 0; i < 2; i++)
+	{
+		ThirItem[i] = sig_m2[i][0] * PUxPx_loc[i] * n_loc[0] + sig_m2[i][2] * (PUxPx_loc[i] * n_loc[1] + PUyPx_loc[i] * n_loc[0]) + sig_m2[i][1] * PUyPx_loc[i] * n_loc[1];
+	}
+	//== get I_m2==;
+	I_m2 = (w_m2[0]*q0 + w_m2[1]*q1) * 0.5 - (secItem[0]*q0 + secItem[1]*q1) * 0.5 - (ThirItem[0]*q0 + ThirItem[1]*q1) * 0.5;
+}
+
+void pdsolve::SIFsAndPropaDire_GaussIntegr(double& KI, double& KII, double& theta_c, double R, datModel& o_dat, int ck)
+{
+	vector<int> v_ele;
+	vector<double*>v_nodeq_Jinte;
+	double Xtip[3] = { o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1],o_dat.cdp_crack[ck][1][2] };
+	double blockSize = o_dat.op_getGeomP()->getBlockSize();
+	double lbc[3], xN[4][3], dis, * dp_q;
+	o_dat.op_getGeomP()->getlbc(lbc);
+	//=============to select element for J-integral.
+	int ID[3], numEleoB, numNIn, EleID, NID[5];
+	int numBlocks[3], blockIndex;
+	o_dat.getNumOfBLock(numBlocks);
+	for (int i = 0; i < 3; i++)
+	{
+		ID[i] = (Xtip[i] - lbc[i]) / blockSize;
+	}
+
+	int numSerchBlock = o_dat.cd_mr / (o_dat.op_getGeomP()->cd_factor);
+	numSerchBlock++;
+	for (int idx = ID[0] - numSerchBlock; idx < ID[0] + numSerchBlock+1; idx++)
+	{
+		for (int idy = ID[1] - numSerchBlock; idy < ID[1] + numSerchBlock+1; idy++)
+		{
+			if (idx >= 0 && idx < (numBlocks[0]) && idy >= 0 && idy < (numBlocks[1]))
+			{
+				blockIndex = idx + idy * numBlocks[0];
+				numEleoB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+				for (int k = 0; k < numEleoB; k++)
+				{
+					numNIn = 0;
+					EleID = o_dat.op_getBlock(blockIndex)->getEleoB(k);
+					o_dat.op_getEles(EleID - 1)->getConNid(NID);//NID [4], be caution;
+					if (o_dat.op_getEles(EleID - 1)->ci_numNodes == 3)
+					{
+						NID[3] = NID[2];
+					}
+					dp_q = new double[4]{ 0 };
+					for (int n = 0; n < 4; n++)
+					{
+						o_dat.op_getNode(NID[n] - 1)->getcoor(xN[n]);
+						dis = (xN[n][0] - Xtip[0]) * (xN[n][0] - Xtip[0]) + (xN[n][1] - Xtip[1]) * (xN[n][1] - Xtip[1]);
+						if (dis < R * R)
+						{
+							dp_q[n] = 1.0;
+							numNIn++;
+						}
+					}
+					if (numNIn == 0 || numNIn == 4)
+					{
+						delete[] dp_q;
+						dp_q = NULL;
+					}
+					else
+					{
+						v_nodeq_Jinte.push_back(dp_q);
+						v_ele.push_back(EleID);
+					}
+				}
+			}
+		}
+	}
+	//======J_integral to get K_I and K_II====
+	double I_m1 = 0, I_m2 = 0, temp_I1, temp_I2, temp, temp_J, dis_next, q0,q1;
+	double pdIm1 = 0, pdIm2 = 0;
+	int nd, nd_next;
+	ofstream fout;
+	for (int i = 0; i < v_ele.size(); i++)
+	{
+		//if (o_dat.op_getEles(v_ele[i] - 1)->ci_algorithmType == 2)
+		{ 
+			Jintegr_GaussIntegr(temp_I1, temp_I2, v_ele[i], v_nodeq_Jinte[i], ck, o_dat);
+			I_m1 = I_m1 + temp_I1;
+			I_m2 = I_m2 + temp_I2;
+			if (/*o_dat.op_getEles(v_ele[i] - 1)->ci_algorithmType == 1*/v_ele[i] == 2530 || v_ele[i] ==2531)
+			{
+				printf("PDE %d, ", v_ele[i]);
+				pdIm1 = pdIm1 + temp_I1;
+				pdIm2 = pdIm2 + temp_I2;
+			}
+
+			//o_dat.op_getEles(v_ele[i] - 1)->getConNid(NID);//NID [4], be caution;
+			//if (o_dat.op_getEles(v_ele[i] - 1)->ci_numNodes == 3)
+			//{
+			//	NID[3] = NID[2];
+			//}
+			//NID[4] = NID[0];
+			//for (int n = 0; n < 4; n++)
+			//{
+			//	nd = NID[n];
+			//	nd_next = NID[n + 1];
+			//	if (o_dat.op_getNode(nd - 1)->getNodeType() == 2 && o_dat.op_getNode(nd_next - 1)->getNodeType() == 2)
+			//	{
+			//		q0 = v_nodeq_Jinte[i][n];
+			//		if (n<3)
+			//		{
+			//			q1= v_nodeq_Jinte[i][n+1];
+			//		}
+			//		else
+			//		{
+			//			q1 = v_nodeq_Jinte[i][0];
+			//		}
+			//		Jintegrand(temp_I1, temp_I2, temp_J, nd, nd_next,q0,q1, ck, o_dat, fout);
+			//		I_m1 = I_m1 - temp_I1;
+			//		I_m2 = I_m2 - temp_I2;
+			//		pdIm1 = pdIm1 - temp_I1;
+			//		pdIm2 = pdIm2 - temp_I2;
+			//	}
+			//}
+		}
+		//else
+		//{
+		//	//PD element;
+		//	o_dat.op_getEles(v_ele[i] - 1)->getConNid(NID);//NID [4], be caution;
+		//	if (o_dat.op_getEles(v_ele[i] - 1)->ci_numNodes == 3)
+		//	{
+		//		NID[3] = NID[2];
+		//	}
+		//	NID[4] = NID[0];
+		//	for (int n = 0; n < 4; n++)
+		//	{
+		//		nd = NID[n];
+		//		nd_next = NID[n + 1];
+		//		o_dat.op_getNode(nd - 1)->getcoor(xN[0]);
+		//		o_dat.op_getNode(nd_next - 1)->getcoor(xN[1]);
+		//		dis = (xN[0][0] - Xtip[0]) * (xN[0][0] - Xtip[0]) + (xN[0][1] - Xtip[1]) * (xN[0][1] - Xtip[1]);
+		//		dis_next = (xN[1][0] - Xtip[0]) * (xN[1][0] - Xtip[0]) + (xN[1][1] - Xtip[1]) * (xN[1][1] - Xtip[1]);
+		//		if (dis < (R * R) && dis_next < (R * R))
+		//		{
+		//			Jintegrand(temp_I1, temp_I2, temp_J, nd, nd_next,1.0,1.0, ck, o_dat, fout);
+		//			I_m1 = I_m1 + temp_I1;
+		//			I_m2 = I_m2 + temp_I2;
+		//			pdIm1 = pdIm1 + temp_I1;
+		//			pdIm2 = pdIm2 + temp_I2;
+		//		}
+		//	}
+		//	printf("PDE %d, ", v_ele[i]);
+
+		//}
+	}
+	//==get theta_c===
+	int proType = o_dat.getProType();
+	double E = o_dat.op_getmaterial()->getE();
+	double nu = o_dat.op_getmaterial()->getnu();
+	double E_prim;
+	if (proType == 1)
+	{
+		E_prim = E;  // plane stress;
+	}
+	else if (proType == 2)
+	{
+		E_prim = E / (1 - nu * nu);//plane strain;
+	}
+	KI = 0.5 * E_prim * I_m1;
+	KII = 0.5 * E_prim * I_m2;
+	printf("\nKI pde %e, no pde %e.     KII pde %e, no pde %e.\n", 0.5 * E_prim * pdIm1, KI- 0.5 * E_prim * pdIm1, 0.5 * E_prim * pdIm2, KII- 0.5 * E_prim * pdIm2);
+	if (abs(KI) < 1.0e-15)
+	{
+		if (KII > 0)
+		{
+			theta_c = 2 * atan(-0.5 * sqrt(2));
+		}
+		else
+		{
+			theta_c = 2 * atan(0.5 * sqrt(2));
+		}
+	}
+	else
+	{
+		temp = -2.0 * KII / KI / (1 + sqrt(1.0 + 8.0 * KII * KII / KI / KI));
+		theta_c = 2.0 * atan(temp);
+	}
+
+	// release memory
+	vector<double*>::iterator iter_nq;
+	for (iter_nq = v_nodeq_Jinte.begin(); iter_nq != v_nodeq_Jinte.end(); iter_nq++)
+	{
+		delete[] * iter_nq;
+		*iter_nq = NULL;
+	}
+	v_nodeq_Jinte.clear();
+	v_ele.clear();
+}
+
+void pdsolve::Jintegr_GaussIntegr(double& I_m1, double& I_m2, int eleID, double* dp_q, int ck, datModel& o_dat)
+{
+	double pi = acos(-1.0);
+	I_m1 = 0; I_m2 = 0;
+	int proType = o_dat.getProType();
+	double E = o_dat.op_getmaterial()->getE();
+	double nu = o_dat.op_getmaterial()->getnu();
+	double mu = 0.5 * E / (1 + nu);
+	double kappa;
+	if (proType == 1)
+	{
+		//plane stress;
+		kappa = (3 - nu) / (1 + nu);// plane stress;
+	}
+	else if (proType == 2)
+	{
+		//plane strain;
+		kappa = (3 - 4 * nu);
+	}
+	else
+	{
+		cout << "problem type is not 1 or 2" << endl;
+		exit(0);
+	}
+	double xNode[4][3], xGP[2], N[4];
+	int conNId[4];
+	o_dat.op_getEles(eleID - 1)->getConNid(conNId);//NID [4], be caution;
+	if (o_dat.op_getEles(eleID - 1)->ci_numNodes == 3)
+	{
+		conNId[3] = conNId[2];
+	}
+	for (int i = 0; i < 4; i++)
+	{
+		o_dat.op_getNode(conNId[i] - 1)->getcoor(xNode[i]);
+	}
+	double XoldTip[3], XnewTip[3], vt[3];
+	/*XoldTip[0] = cracTip[0]; XoldTip[1] = cracTip[1];
+	XnewTip[0] = cracTip[2]; XnewTip[1] = cracTip[3];*/
+	for (int i = 0; i < 3; i++)
+	{
+		XoldTip[i] = o_dat.cdp_crack[ck][0][i];
+		XnewTip[i] = o_dat.cdp_crack[ck][1][i];
+		vt[i] = XnewTip[i] - XoldTip[i];
+	}
+	double alpha, vp[3], r, theta, vpT[3];
+	alpha = atan2(vt[1], vt[0]);
+	//============Gauss integration===
+	int numGP = o_sifGP.i_getNumPts();
+	double /*wm, wn, pm, qn,*/ detJ, PqPx_loc[2], PqPx_glo[2], temp;
+	double sigma_glo[3], dg_glo[4], sigma_loc[3], PUxPx_loc, PUyPx_loc;
+	double sig_m1[3], sig_z, eps_m1[3], w_m1;
+	double sig_m2[3], eps_m2[3], w_m2, PuxPx_m2, PuyPx_m2;
+	double PuxPx_m1, PuyPx_m1, secItem, ThirItem;
+
+	
+	vector<double> Wmn, pm, qn;
+	int algo = o_dat.op_getEles(eleID - 1)->ci_algorithmType;
+	//if (algo==2)
+	{
+		// if standard Element;
+		for (int mg = 0; mg < numGP; mg++)
+		{
+			/*wm = o_sifGP.d_getWeight(mg);
+			pm = o_sifGP.d_getGaussPt(mg);*/
+			for (int ng = 0; ng < numGP; ng++)
+			{
+				double tmp = (o_sifGP.d_getWeight(mg)) * (o_sifGP.d_getWeight(ng));
+				Wmn.push_back(tmp);
+				pm.push_back(o_sifGP.d_getGaussPt(mg));
+				qn.push_back(o_sifGP.d_getGaussPt(ng));
+			}
+		}
+	}
+	//else
+	//{
+	//	//if enriched element;
+	//	//only work for 3N or 4N 2d element;
+	//	Wmn.resize(4);
+	//	pm.resize(4);
+	//	qn.resize(4);
+	//	pm.at(0) = -1; pm.at(1) = 1; pm.at(2) = 1; pm.at(3) = -1;
+	//	qn.at(0) = -1; qn.at(1) = -1; qn.at(2) = 1; qn.at(3) = 1;
+	//	Wmn.at(0) = 0.25; Wmn.at(1) = 0.25; Wmn.at(2) = 0.25; Wmn.at(3) = 0.25;
+	//}
+	int sz = Wmn.size();
+	for (int g = 0; g < sz; g++)
+	{
+		/*wm = o_sifGP.d_getWeight(mg);
+		pm = o_sifGP.d_getGaussPt(mg);
+		for (int ng = 0; ng < numGP; ng++)
+		{*/
+			/*wn = o_sifGP.d_getWeight(ng);
+			qn = o_sifGP.d_getGaussPt(ng);*/
+		//if (algo==2)
+		{
+			detJ = detJacobi_quad(xNode, pm.at(g), qn.at(g));
+			shapeFunction_quad(N, pm.at(g), qn.at(g));
+			xGP[0] = 0;
+			xGP[1] = 0;
+			for (int i = 0; i < 4; i++)
+			{
+				xGP[0] = xGP[0] + N[i] * xNode[i][0];
+				xGP[1] = xGP[1] + N[i] * xNode[i][1];
+			}
+		}
+		/*else
+		{
+			detJ = o_dat.op_getEles(eleID - 1)->cd_V;
+			xGP[0]= xNode[g][0];
+			xGP[1] = xNode[g][1];
+		}*/
+			
+			//==find r and theta====
+			for (int i = 0; i < 2; i++)
+			{
+				vp[i] = xGP[i] - XnewTip[i];
+			}
+			r = sqrt(vp[0] * vp[0] + vp[1] * vp[1]);
+			vpT[0] = cos(alpha) * vp[0] + sin(alpha) * vp[1];
+			vpT[1] = -sin(alpha) * vp[0] + cos(alpha) * vp[1];
+			theta = atan2(vpT[1], vpT[0]);
+			//=============global stress of gauss points and displacement gradient state 1, and transform to local
+			//if (algo==2)
+			{
+				DispGradAndStressAndPqPx_FEM(dg_glo, sigma_glo, PqPx_glo, dp_q, eleID - 1, pm.at(g), qn.at(g), o_dat);
+			}
+			/*else
+			{
+				DispGradAndStressAndPqPx_PDE(dg_glo, sigma_glo, PqPx_glo, dp_q, eleID - 1, pm.at(g), qn.at(g), conNId[g], o_dat);
+			}*/
+			//transfom to local coordinate;
+			PqPx_loc[0] = cos(alpha) * PqPx_glo[0] + sin(alpha) * PqPx_glo[1];
+			PqPx_loc[1] = -sin(alpha) * PqPx_glo[0] + cos(alpha) * PqPx_glo[1];
+			// trans sigma 
+			sigma_loc[0] = (cos(alpha) * sigma_glo[0] + sin(alpha) * sigma_glo[2]) * cos(alpha) +
+				(cos(alpha) * sigma_glo[2] + sin(alpha) * sigma_glo[1]) * sin(alpha);
+			sigma_loc[1] = -(-sin(alpha) * sigma_glo[0] + cos(alpha) * sigma_glo[2]) * sin(alpha) +
+				(-sin(alpha) * sigma_glo[2] + cos(alpha) * sigma_glo[1]) * cos(alpha);
+			sigma_loc[2] = -(cos(alpha) * sigma_glo[0] + sin(alpha) * sigma_glo[2]) * sin(alpha) +
+				(cos(alpha) * sigma_glo[2] + sin(alpha) * sigma_glo[1]) * cos(alpha);
+			//trans displacment gradient;
+			PUxPx_loc = (cos(alpha) * dg_glo[0] + sin(alpha) * dg_glo[3]) * cos(alpha) +
+				(cos(alpha) * dg_glo[2] + sin(alpha) * dg_glo[1]) * sin(alpha);
+			PUyPx_loc = (-sin(alpha) * dg_glo[0] + cos(alpha) * dg_glo[3]) * cos(alpha) +
+				(-sin(alpha) * dg_glo[2] + cos(alpha) * dg_glo[1]) * sin(alpha);
+			//======================MODE I ====================================
+			//== mode 1; interaction strain energy
+			sig_m1[0] = 1.0 / sqrt(2 * pi * r) * cos(0.5 * theta) * (1 - sin(0.5 * theta) * sin(1.5 * theta));
+			sig_m1[1] = 1.0 / sqrt(2 * pi * r) * cos(0.5 * theta) * (1 + sin(0.5 * theta) * sin(1.5 * theta));
+			sig_m1[2] = 1.0 / sqrt(2 * pi * r) * sin(0.5 * theta) * cos(0.5 * theta) * cos(1.5 * theta);
+			if (proType == 1)
+			{
+				sig_z = 0;  // plane stress;
+			}
+			else if (proType == 2)
+			{
+				sig_z = nu * (sig_m1[0] + sig_m1[1]);  // plane strain;
+			}
+			eps_m1[0] = 1.0 / E * (sig_m1[0] - nu * (sig_m1[1] + sig_z));
+			eps_m1[1] = 1.0 / E * (sig_m1[1] - nu * (sig_m1[0] + sig_z));
+			eps_m1[2] = sig_m1[2] * (1 + nu) / E;
+			w_m1 = (sigma_loc[0] * eps_m1[0] + sigma_loc[1] * eps_m1[1] + 2 * sigma_loc[2] * eps_m1[2]) * PqPx_loc[0];
+			//===Mode 1, the second Item;
+			PuxPx_m1 = (1 + nu) / E / sqrt(2 * pi * r) * cos(0.5 * theta) * ((kappa - 1) * 0.5 - sin(0.5 * theta) * sin(1.5 * theta));
+			PuyPx_m1 = (1 + nu) / E / sqrt(2 * pi * r) * sin(0.5 * theta) *(-0.5 * (kappa + 1) + cos(0.5 * theta) * cos(0.5 * theta) - sin(theta) * sin(theta));
+			secItem = sigma_loc[0] * PuxPx_m1 * PqPx_loc[0] + sigma_loc[2] * (PuxPx_m1 * PqPx_loc[1] + PuyPx_m1 * PqPx_loc[0]) + sigma_loc[1] * PuyPx_m1 * PqPx_loc[1];
+			//===Mode 1, the Third Item;
+			ThirItem = sig_m1[0] * PUxPx_loc * PqPx_loc[0] + sig_m1[2] * (PUxPx_loc * PqPx_loc[1] + PUyPx_loc * PqPx_loc[0]) + sig_m1[1] * PUyPx_loc * PqPx_loc[1];
+			//== get I_m1==;
+			temp = (-w_m1 + secItem + ThirItem) * Wmn.at(g) * detJ;
+			I_m1 = I_m1 + temp;
+			//================MODE II=======================================
+			//== mode 2; interaction strain energy
+			sig_m2[0] = -1.0 / sqrt(2 * pi * r) * sin(0.5 * theta) * (2 + cos(0.5 * theta) * cos(1.5 * theta));
+			sig_m2[1] = 1.0 / sqrt(2 * pi * r) * sin(0.5 * theta) * cos(0.5 * theta) * cos(1.5 * theta);
+			sig_m2[2] = 1.0 / sqrt(2 * pi * r) * cos(0.5 * theta) * (1 - sin(0.5 * theta) * sin(1.5 * theta));
+			if (proType == 1)
+			{
+				sig_z = 0;  // plane stress;
+			}
+			else if (proType == 2)
+			{
+				sig_z = nu * (sig_m1[0] + sig_m1[1]);  // plane strain;
+			}
+			eps_m2[0] = 1.0 / E * (sig_m2[0] - nu * (sig_m2[1] + sig_z));
+			eps_m2[1] = 1.0 / E * (sig_m2[1] - nu * (sig_m2[0] + sig_z));
+			eps_m2[2] = sig_m2[2] * (1 + nu) / E;
+			w_m2 = (sigma_loc[0] * eps_m2[0] + sigma_loc[1] * eps_m2[1] + 2 * sigma_loc[2] * eps_m2[2]) * PqPx_loc[0];
+			//===Mode 2, the second Item;
+			PuxPx_m2 = (1 + nu) / E / sqrt(2 * pi * r) * sin(0.5 * theta) * (sin(theta) * sin(theta) - cos(0.5 * theta) * cos(0.5 * theta) - 0.5 * (kappa + 1));
+			PuyPx_m2 = (1 + nu) / E / sqrt(2 * pi * r) * cos(0.5 * theta) * (-sin(0.5 * theta) * sin(1.5 * theta) - 0.5 * (kappa - 1));
+	
+			secItem = sigma_loc[0] * PuxPx_m2 * PqPx_loc[0] + sigma_loc[2] * (PuxPx_m2 * PqPx_loc[1] + PuyPx_m2 * PqPx_loc[0])
+				+ sigma_loc[1] * PuyPx_m2 * PqPx_loc[1];
+			//===Mode 2, the Third Item;
+			ThirItem = sig_m2[0] * PUxPx_loc * PqPx_loc[0] + sig_m2[2] * (PUxPx_loc * PqPx_loc[1] + PUyPx_loc * PqPx_loc[0])
+				+ sig_m2[1] * PUyPx_loc * PqPx_loc[1];
+			//== get I_m2==;
+			temp = (-w_m2 + secItem + ThirItem) * Wmn.at(g) * detJ;
+			I_m2 = I_m2 + temp;
+
+		//}
+	}
+}
+
+void pdsolve::DispGradAndStressAndPqPx_FEM(double DG[], double sigma[], double PqPx[], double* dp_q, int ele, double p, double q, datModel& o_dat)
+{
+	//===so far only work for 2D 4N (3N) quad-element.===
+	// 3N triangle elements is treated as 4N elements with 3rd and 4th node collapsed together.
+	
+	// this function is to get displacement gradient, PqPx, and stress of gauss points
+	//DG[0] ~[3] =pUxpx,pUypy, pUxpy,pUypx;
+
+	//B matrix calculated from FEM with size 3*8;
+	Matrix* B = new Matrix(3, 8);
+	Matrix* B_DG = new Matrix(4, 8);
+	Matrix* B_pqpx = new Matrix(2, 4);
+	Vector* v_epsilon, * v_sigma, * Ue, * v_DG, * v_q, * v_PqPx;
+	Ue = new Vector(8);
+	v_epsilon = new Vector(3);
+	v_sigma = new Vector(3);
+	v_DG = new Vector(4);
+	v_q = new Vector(4);
+	v_PqPx = new Vector(2);
+	B->zero();
+	B_DG->zero();
+	double B1[4], B2[4], invJ[2][2], tempu;
+	int conNid[4];
+	double xN[4][3];
+	o_dat.op_getEles(ele)->getConNid(conNid);
+	if (o_dat.op_getEles(ele)->ci_numNodes == 3)
+	{
+		conNid[3] = conNid[2];
+	}
+	for (int i = 0; i < 4; i++)
+	{
+		o_dat.op_getNode(conNid[i] - 1)->getcoor(xN[i]);
+		for (int j = 0; j < 2; j++)
+		{
+			tempu = o_dat.op_getNode(conNid[i] - 1)->op_getDof(j)->d_getValue();
+			Ue->setCoeff(2 * i + j, tempu);
+		}
+		v_q->setCoeff(i, dp_q[i]);
+	}
+	//===inverse of jacobi====================
+	double J[2][2] = { 0.0 };
+	double dNdp[4], dNdq[4];
+	dNdp[0] = 0.25 * (-1 + q);
+	dNdp[1] = 0.25 * (1 - q);
+	dNdp[2] = 0.25 * (1 + q);
+	dNdp[3] = 0.25 * (-1 - q);
+
+	dNdq[0] = 0.25 * (-1 + p);
+	dNdq[1] = 0.25 * (-1 - p);
+	dNdq[2] = 0.25 * (1 + p);
+	dNdq[3] = 0.25 * (1 - p);
+	for (int i = 0; i < 4; i++)
+	{
+		J[0][0] = J[0][0] + dNdp[i] * xN[i][0];
+		J[0][1] = J[0][1] + dNdp[i] * xN[i][1];
+		J[1][0] = J[1][0] + dNdq[i] * xN[i][0];
+		J[1][1] = J[1][1] + dNdq[i] * xN[i][1];
+	}
+	double detJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+	invJ[0][0] = J[1][1] / detJ;
+	invJ[0][1] = -J[0][1] / detJ;
+	invJ[1][0] = -J[1][0] / detJ;
+	invJ[1][1] = J[0][0] / detJ;
+	//==============================================
+	for (int i = 0; i < 4; i++)
+	{
+		B1[i] = invJ[0][0] * dNdp[i] + invJ[0][1] * dNdq[i];
+		B2[i] = invJ[1][0] * dNdp[i] + invJ[1][1] * dNdq[i];
+	}
+	for (int i = 0; i < 4; i++)
+	{
+		B->setCoeff(0, 2 * i, B1[i]);
+		B->setCoeff(1, 2 * i + 1, B2[i]);
+		B->setCoeff(2, 2 * i, B2[i]);
+		B->setCoeff(2, 2 * i + 1, B1[i]);
+
+		B_DG->setCoeff(0, 2 * i, B1[i]);
+		B_DG->setCoeff(1, 2 * i + 1, B2[i]);
+		B_DG->setCoeff(2, 2 * i, B2[i]);
+		B_DG->setCoeff(3, 2 * i + 1, B1[i]);
+
+		B_pqpx->setCoeff(0, i, B1[i]);
+		B_pqpx->setCoeff(1, i, B2[i]);
+	}
+	//===get stress and displacement gradient, pqpx;
+	matoperat.matMultiply(B_DG, Ue, v_DG);
+	for (int i = 0; i < 4; i++)
+	{
+		DG[i] = v_DG->d_getCoeff(i);
+	}
+	matoperat.matMultiply(B, Ue, v_epsilon);
+	matoperat.matMultiply(cop_D, v_epsilon, v_sigma);
+	for (int i = 0; i < 3; i++)
+	{
+		sigma[i] = v_sigma->d_getCoeff(i);
+	}
+	matoperat.matMultiply(B_pqpx, v_q, v_PqPx);
+	for (int i = 0; i < 2; i++)
+	{
+		PqPx[i] = v_PqPx->d_getCoeff(i);
+	}
+
+	delete  B, delete B_DG, delete v_epsilon;
+	delete v_sigma, delete Ue, delete v_DG, delete B_pqpx, delete v_q, delete v_PqPx;
+	B = NULL, B_DG = NULL, v_epsilon = NULL, v_sigma = NULL, Ue = NULL, v_DG = NULL, B_pqpx = NULL, v_q = NULL, v_PqPx = NULL;
+}
+
+void pdsolve::DispGradAndStressAndPqPx_PDE(double DG[], double sigma[], double PqPx[], double* dp_q, int ele, double p, double q, int NID, datModel& o_dat)
+{
+	//===so far only work for 2D 4N (3N) quad-element.===
+	// 3N triangle elements is treated as 4N elements with 3rd and 4th node collapsed together.
+
+	// this function is to get displacement gradient, PqPx, and stress of PD node.
+	//DG[0] ~[3] =pUxpx,pUypy, pUxpy,pUypx;
+	//===get stress;==
+	double sig[6];
+	o_dat.op_getNode(NID - 1)->getStress(sig);
+	sigma[0] = sig[0];
+	sigma[1] = sig[1];
+	sigma[2] = sig[3];
+    //get displacement gradient
+	DispGrad(DG, NID, o_dat);
+	//====get PqPx[2];
+	Vector *v_PqPx = new Vector(2);
+	Matrix* B_pqpx = new Matrix(2, 4);
+	B_pqpx->zero();
+	Vector *v_q = new Vector(4);
+	int conNid[4];
+	double xN[4][3]{ 0 };
+	o_dat.op_getEles(ele)->getConNid(conNid);
+	double B1[4]{ 0 }, B2[4]{ 0 };
+	if (o_dat.op_getEles(ele)->ci_numNodes == 3)
+	{
+		conNid[3] = conNid[2];
+		for (int i = 0; i < 3; i++)
+		{
+			o_dat.op_getNode(conNid[i] - 1)->getcoor(xN[i]);
+			v_q->setCoeff(i, dp_q[i]);
+		}
+		double b[3], c[3];
+		//==
+		b[0] = xN[1][1] - xN[2][1];
+		b[1] = xN[2][1] - xN[0][1];
+		b[2] = xN[0][1] - xN[1][1];
+		//==
+		c[0] = -xN[1][0] + xN[2][0];
+		c[1] = -xN[2][0] + xN[0][0];
+		c[2] = -xN[0][0] + xN[1][0];
+
+		//====total V==
+		double V2 = 2.0 * o_dat.op_getEles(ele)->cd_V;
+		for (int i = 0; i < 3; i++)
+		{
+			B1[i] = b[i] / V2;
+			B2[i] = c[i] / V2;
+		}
+	}
+	else
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			o_dat.op_getNode(conNid[i] - 1)->getcoor(xN[i]);
+			v_q->setCoeff(i, dp_q[i]);
+		}
+		//===inverse of jacobi====================
+		double invJ[2][2];
+		double J[2][2] = { 0.0 };
+		double dNdp[4], dNdq[4];
+		dNdp[0] = 0.25 * (-1 + q);
+		dNdp[1] = 0.25 * (1 - q);
+		dNdp[2] = 0.25 * (1 + q);
+		dNdp[3] = 0.25 * (-1 - q);
+		dNdq[0] = 0.25 * (-1 + p);
+		dNdq[1] = 0.25 * (-1 - p);
+		dNdq[2] = 0.25 * (1 + p);
+		dNdq[3] = 0.25 * (1 - p);
+		for (int i = 0; i < 4; i++)
+		{
+			J[0][0] = J[0][0] + dNdp[i] * xN[i][0];
+			J[0][1] = J[0][1] + dNdp[i] * xN[i][1];
+			J[1][0] = J[1][0] + dNdq[i] * xN[i][0];
+			J[1][1] = J[1][1] + dNdq[i] * xN[i][1];
+		}
+		double detJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+		invJ[0][0] = J[1][1] / detJ;
+		invJ[0][1] = -J[0][1] / detJ;
+		invJ[1][0] = -J[1][0] / detJ;
+		invJ[1][1] = J[0][0] / detJ;
+		//==============================================
+		for (int i = 0; i < 4; i++)
+		{
+			B1[i] = invJ[0][0] * dNdp[i] + invJ[0][1] * dNdq[i];
+			B2[i] = invJ[1][0] * dNdp[i] + invJ[1][1] * dNdq[i];
+		}
+		
+	}
+	for (int i = 0; i < 4; i++)
+	{
+		B_pqpx->setCoeff(0, i, B1[i]);
+		B_pqpx->setCoeff(1, i, B2[i]);
+	}
+	matoperat.matMultiply(B_pqpx, v_q, v_PqPx);
+	for (int i = 0; i < 2; i++)
+	{
+		PqPx[i] = v_PqPx->d_getCoeff(i);
+	}
+	delete v_PqPx;
+	delete B_pqpx;
+	delete v_q;
+}
+
+void pdsolve::SIFsAndPropaDire_GaussPointPDnode(double& KI, double& KII, double& theta_c, double R, datModel& o_dat, int ck)
+{
+	vector<int> v_ele;
+	vector<double*>v_nodeq_Jinte;
+	double Xtip[3] = { o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1],o_dat.cdp_crack[ck][1][2] };
+	double blockSize = o_dat.op_getGeomP()->getBlockSize();
+	double lbc[3], xN[4][3], dis;
+	o_dat.op_getGeomP()->getlbc(lbc);
+	//=============to select element for J-integral.
+	int ID[3], numEleoB, numNIn, EleID, NID[5];
+	int numBlocks[3], blockIndex;
+	o_dat.getNumOfBLock(numBlocks);
+	for (int i = 0; i < 3; i++)
+	{
+		ID[i] = (Xtip[i] - lbc[i]) / blockSize;
+	}
+
+	int numSerchBlock = o_dat.cd_mr / (o_dat.op_getGeomP()->cd_factor);
+	numSerchBlock++;
+	for (int idx = ID[0] - numSerchBlock; idx < ID[0] + numSerchBlock + 1; idx++)
+	{
+		for (int idy = ID[1] - numSerchBlock; idy < ID[1] + numSerchBlock + 1; idy++)
+		{
+			if (idx >= 0 && idx < (numBlocks[0]) && idy >= 0 && idy < (numBlocks[1]))
+			{
+				blockIndex = idx + idy * numBlocks[0];
+				numEleoB = o_dat.op_getBlock(blockIndex)->getNumEleoB();
+				for (int k = 0; k < numEleoB; k++)
+				{
+					numNIn = 0;
+					EleID = o_dat.op_getBlock(blockIndex)->getEleoB(k);
+					o_dat.op_getEles(EleID - 1)->getConNid(NID);//NID [4], be caution;
+					if (o_dat.op_getEles(EleID - 1)->ci_numNodes == 3)
+					{
+						NID[3] = NID[2];
+					}
+					for (int n = 0; n < 4; n++)
+					{
+						o_dat.op_getNode(NID[n] - 1)->getcoor(xN[n]);
+						dis = (xN[n][0] - Xtip[0]) * (xN[n][0] - Xtip[0]) + (xN[n][1] - Xtip[1]) * (xN[n][1] - Xtip[1]);
+						if (dis < R * R)
+						{
+							numNIn++;
+						}
+					}
+					if (numNIn != 0 && numNIn != 4)
+					{
+						v_ele.push_back(EleID);
+					}
+				}
+			}
+		}
+	}
+	double sigma_glo[3], dg_glo[4], PqPx_glo[2], dp_q[4];
+	double xGP[3]{ 0 }, theta, vt[2], sig_t[6];
+	int conNId[4], numN;
+	vector<GausPoint_Jint> v_GP;
+	for (int eleID : v_ele)
+	{
+		numN = o_dat.op_getEles(eleID - 1)->ci_numNodes;
+		if (o_dat.op_getEles(eleID-1)->ci_algorithmType==2)
+		{
+			//====may need modified for 3N triangle 
+			DispGradAndStressAndPqPx_FEM(dg_glo, sigma_glo, PqPx_glo, dp_q, eleID - 1, 0, 0, o_dat);
+			o_dat.op_getEles(eleID - 1)->getConNid(conNId);//NID [4], be caution;
+			if (numN == 3)
+			{
+				conNId[3] = conNId[2];
+			}
+			xGP[0] = 0; xGP[1] = 0;
+			for (int i = 0; i < 4; i++)
+			{
+				o_dat.op_getNode(conNId[i] - 1)->getcoor(xN[i]);
+				for (int j = 0; j < 2; j++)
+				{
+					xGP[j] = xGP[j] + xN[i][j] * 0.25;
+				}
+			}
+			for (int j = 0; j < 2; j++)
+			{
+				vt[j] = xGP[j] - Xtip[j];
+			}
+			theta = atan2(vt[1], vt[0]);
+			GausPoint_Jint gp;
+			for (int i = 0; i < 3; i++)
+			{
+				gp.sigma[i] = sigma_glo[i];
+				gp.DG[i] = dg_glo[i];
+				gp.x[i] = xGP[i];
+			}
+			gp.DG[3] = dg_glo[3];
+			gp.theta = theta;
+			v_GP.push_back(gp);
+		}
+		else
+		{
+			o_dat.op_getEles(eleID - 1)->getConNid(conNId);//NID [4], be caution;
+			for (int i = 0; i < numN; i++)
+			{
+				o_dat.op_getNode(conNId[i] - 1)->getcoor(xN[i]);
+				dis = (xN[i][0] - Xtip[0]) * (xN[i][0] - Xtip[0]) + (xN[i][1] - Xtip[1]) * (xN[i][1] - Xtip[1]);
+				if (dis>R*R)
+				{
+					o_dat.op_getNode(conNId[i] - 1)->getStress(sig_t);//may be modified;
+					DispGrad(dg_glo, conNId[i], o_dat);
+					for (int j = 0; j < 2; j++)
+					{
+						vt[j] = xN[i][j] - Xtip[j];
+					}
+					theta = atan2(vt[1], vt[0]);
+					GausPoint_Jint gp;
+					for (int j = 0; j < 3; j++)
+					{
+						gp.DG[j] = dg_glo[j];
+						gp.x[j] = xN[i][j];
+					}
+					gp.DG[3] = dg_glo[3];
+					gp.sigma[0] = sig_t[0];
+					gp.sigma[1] = sig_t[1];
+					gp.sigma[2] = sig_t[3];
+					gp.theta = theta;
+					v_GP.push_back(gp);
+				}
+			}
+		}
+	}
+	//============sort==========
+	sort(v_GP.begin(), v_GP.end(), b_vcom_GP);
+	v_GP.push_back(v_GP.at(0));// to get a close curve;
+	//===========integration===========
+	double I_m1 = 0, I_m2 = 0, temp_I1, temp_I2;
+	int numPath = v_GP.size()-1;
+	for (int i = 0; i < numPath; i++)
+	{
+		Jintegrand_GPPDN(temp_I1, temp_I2, v_GP.at(i), v_GP.at(i + 1), ck, o_dat);
+		I_m1 = I_m1 + temp_I1;
+		I_m2 = I_m2 + temp_I2;
+	}
+	//==get theta_c===
+	int proType = o_dat.getProType();
+	double E = o_dat.op_getmaterial()->getE();
+	double nu = o_dat.op_getmaterial()->getnu();
+	double E_prim;
+	if (proType == 1)
+	{
+		E_prim = E;  // plane stress;
+	}
+	else if (proType == 2)
+	{
+		E_prim = E / (1 - nu * nu);//plane strain;
+	}
+	KI = 0.5 * E_prim * I_m1;
+	KII = 0.5 * E_prim * I_m2;
+	if (KII > 0)
+	{
+		theta_c = 2 * atan(0.25 * (KI / KII - sqrt(KI * KI / KII / KII + 8.0)));
+	}
+	else if (KII < 0)
+	{
+		theta_c = 2 * atan(0.25 * (KI / KII + sqrt(KI * KI / KII / KII + 8.0)));
+	}
+	else
+	{
+		theta_c = 0;
+	}
+}
+
+void pdsolve::Jintegrand_GPPDN(double& I_m1, double& I_m2,  GausPoint_Jint p1, GausPoint_Jint p2, int ck, datModel& o_dat)
+{
+	double J_s1;
+	double Xtip[3] = { o_dat.cdp_crack[ck][1][0], o_dat.cdp_crack[ck][1][1],o_dat.cdp_crack[ck][1][2] };
+	double *xN[2];
+	double vp[3], vt[3], norV[3];
+	xN[0] = p1.x;
+	xN[1] = p2.x;
+	for (int ii = 0; ii < 2; ii++)
+	{
+		vp[ii] = xN[1][ii] - xN[0][ii];
+		vt[ii] = xN[1][ii] - Xtip[ii];
+	}
+	norV[0] = vp[1];  // this norm vector is not unit norm vector;
+	norV[1] = -vp[0];
+	int proType = o_dat.getProType();
+	double E = o_dat.op_getmaterial()->getE();
+	double nu = o_dat.op_getmaterial()->getnu();
+	double mu = 0.5 * E / (1 + nu);
+	double kappa;
+	if (proType == 1)
+	{
+		//plane stress;
+		kappa = (3 - nu) / (1 + nu);// plane stress;
+	}
+	else if (proType == 2)
+	{
+		//plane strain;
+		kappa = (3 - 4 * nu);
+	}
+	else
+	{
+		cout << "problem type is not 1 or 2" << endl;
+		exit(0);
+	}
+	//sigma_glo is state 1, need to be gransfor to local coordinate;
+	double w_m1[2], w_m2[2], *sigma_glo[2], eps_m1[2][3], eps_m2[2][3];// be caution: this eps is not engineering strain;
+	double sigma_loc[2][3];
+	double sig_m1[2][3], sig_m2[2][3], sig_z;
+	double r[2], theta[2];
+	sigma_glo[0] = p1.sigma;
+	sigma_glo[1] = p2.sigma;
+	//==find r and theta====
+	double XoldTip[3], XnewTip[3]/*, vt[3]*/;
+	for (int i = 0; i < 3; i++)
+	{
+		XoldTip[i] = o_dat.cdp_crack[ck][0][i];
+		XnewTip[i] = o_dat.cdp_crack[ck][1][i];
+		vt[i] = XnewTip[i] - XoldTip[i];
+	}
+	double alpha, vpT[3];
+	alpha = atan2(vt[1], vt[0]);
+	for (int i = 0; i < 2; i++)
+	{
+		for (int j = 0; j < 2; j++)
+		{
+			vp[j] = xN[i][j] - XnewTip[j];
+		}
+		r[i] = sqrt(vp[0] * vp[0] + vp[1] * vp[1]);
+		vpT[0] = cos(alpha) * vp[0] + sin(alpha) * vp[1];
+		vpT[1] = -sin(alpha) * vp[0] + cos(alpha) * vp[1];
+		theta[i] = atan2(vpT[1], vpT[0]);
+	}
+	//====Trans  from global to local coordinae;
+	// trans normal vector
+	double n_loc[2];
+	n_loc[0] = cos(alpha) * norV[0] + sin(alpha) * norV[1];
+	n_loc[1] = -sin(alpha) * norV[0] + cos(alpha) * norV[1];
+	//trans sigma of state 1;
+	for (int i = 0; i < 2; i++)
+	{
+		sigma_loc[i][0] = (cos(alpha) * sigma_glo[i][0] + sin(alpha) * sigma_glo[i][2]) * cos(alpha) + (cos(alpha) * sigma_glo[i][2] + sin(alpha) * sigma_glo[i][1]) * sin(alpha);
+		sigma_loc[i][1] = -(-sin(alpha) * sigma_glo[i][0] + cos(alpha) * sigma_glo[i][2]) * sin(alpha) + (-sin(alpha) * sigma_glo[i][2] + cos(alpha) * sigma_glo[i][1]) * cos(alpha);
+		sigma_loc[i][2] = -(cos(alpha) * sigma_glo[i][0] + sin(alpha) * sigma_glo[i][2]) * sin(alpha) + (cos(alpha) * sigma_glo[i][2] + sin(alpha) * sigma_glo[i][1]) * cos(alpha);
+	}
+	//trans displacment gradient;
+	double *dg_glo[2], PUxPx_loc[2], PUyPx_loc[2];
+	dg_glo[0] = p1.DG;
+	dg_glo[1] = p2.DG;
+	for (int i = 0; i < 2; i++)
+	{
+		PUxPx_loc[i] = (cos(alpha) * dg_glo[i][0] + sin(alpha) * dg_glo[i][3]) * cos(alpha) + (cos(alpha) * dg_glo[i][2] + sin(alpha) * dg_glo[i][1]) * sin(alpha);
+		PUyPx_loc[i] = (-sin(alpha) * dg_glo[i][0] + cos(alpha) * dg_glo[i][3]) * cos(alpha) + (-sin(alpha) * dg_glo[i][2] + cos(alpha) * dg_glo[i][1]) * sin(alpha);
+	}
+	//===J integral===
+	double w_J[2], secItem_J[2], eps_loc[2][3];
+	for (int i = 0; i < 2; i++)
+	{
+		if (proType == 1)
+		{
+			sig_z = 0;  // plane stress;
+		}
+		else if (proType == 2)
+		{
+			sig_z = nu * (sigma_loc[i][0] + sigma_loc[i][1]);  // plane strain;
+		}
+		eps_loc[i][0] = 1.0 / E * (sigma_loc[i][0] - nu * (sigma_loc[i][1] + sig_z));
+		eps_loc[i][1] = 1.0 / E * (sigma_loc[i][1] - nu * (sigma_loc[i][0] + sig_z));
+		eps_loc[i][2] = sigma_loc[i][2] * (1 + nu) / E;
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		w_J[i] = 0.5 * (sigma_loc[i][0] * eps_loc[i][0] + sigma_loc[i][1] * eps_loc[i][1] + 2 * sigma_loc[i][2] * eps_loc[i][2]) * n_loc[0];
+		secItem_J[i] = sigma_loc[i][0] * PUxPx_loc[i] * n_loc[0] + sigma_loc[i][2] * (PUxPx_loc[i] * n_loc[1] + PUyPx_loc[i] * n_loc[0]) + sigma_loc[i][1] * PUyPx_loc[i] * n_loc[1];
+	}
+	J_s1 = (w_J[0] + w_J[1]) * 0.5 - (secItem_J[0] + secItem_J[1]) * 0.5;
+	//== mode 1; interaction strain energy
+	for (int i = 0; i < 2; i++)
+	{
+		sig_m1[i][0] = 1.0 / sqrt(2 * PI * r[i]) * cos(0.5 * theta[i]) * (1 - sin(0.5 * theta[i]) * sin(1.5 * theta[i]));
+		sig_m1[i][1] = 1.0 / sqrt(2 * PI * r[i]) * cos(0.5 * theta[i]) * (1 + sin(0.5 * theta[i]) * sin(1.5 * theta[i]));
+		sig_m1[i][2] = 1.0 / sqrt(2 * PI * r[i]) * sin(0.5 * theta[i]) * cos(0.5 * theta[i]) * cos(1.5 * theta[i]);
+		if (proType == 1)
+		{
+			sig_z = 0;  // plane stress;
+		}
+		else if (proType == 2)
+		{
+			sig_z = nu * (sig_m1[i][0] + sig_m1[i][1]);  // plane strain;
+		}
+		eps_m1[i][0] = 1.0 / E * (sig_m1[i][0] - nu * (sig_m1[i][1] + sig_z));
+		eps_m1[i][1] = 1.0 / E * (sig_m1[i][1] - nu * (sig_m1[i][0] + sig_z));
+		eps_m1[i][2] = sig_m1[i][2] * (1 + nu) / E;
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		w_m1[i] = (sigma_loc[i][0] * eps_m1[i][0] + sigma_loc[i][1] * eps_m1[i][1] + 2 * sigma_loc[i][2] * eps_m1[i][2]) * n_loc[0];
+	}
+	//===Mode 1, the second Item;
+	double PuxPx_m1[2], PuyPx_m1[2], secItem[2];
+	for (int i = 0; i < 2; i++)
+	{
+		PuxPx_m1[i] = (1 + nu) / E / sqrt(2 * PI * r[i]) * cos(0.5 * theta[i]) * ((kappa - 1) * 0.5 - sin(0.5 * theta[i]) * sin(1.5 * theta[i]));
+		PuyPx_m1[i] = (1 + nu) / E / sqrt(2 * PI * r[i]) * sin(0.5 * theta[i]) * (-0.5 * (kappa + 1) + cos(0.5 * theta[i]) * cos(0.5 * theta[i]) - sin(theta[i]) * sin(theta[i]));
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		secItem[i] = sigma_loc[i][0] * PuxPx_m1[i] * n_loc[0] + sigma_loc[i][2] * (PuxPx_m1[i] * n_loc[1] + PuyPx_m1[i] * n_loc[0]) + sigma_loc[i][1] * PuyPx_m1[i] * n_loc[1];
+	}
+	//===Mode 1, the Third Item;
+	double ThirItem[2];
+	for (int i = 0; i < 2; i++)
+	{
+		ThirItem[i] = sig_m1[i][0] * PUxPx_loc[i] * n_loc[0] + sig_m1[i][2] * (PUxPx_loc[i] * n_loc[1] + PUyPx_loc[i] * n_loc[0]) + sig_m1[i][1] * PUyPx_loc[i] * n_loc[1];
+	}
+	//== get I_m1==;
+	I_m1 = (w_m1[0] + w_m1[1]) * 0.5 - (secItem[0]+ secItem[1]) * 0.5 - (ThirItem[0] + ThirItem[1]) * 0.5;
 	//================MODE II=======================================
 	//== mode 2; interaction strain energy
 	for (int i = 0; i < 2; i++)
@@ -6556,6 +8866,45 @@ void pdsolve::Jintegrand(double& I_m1, double& I_m2, double& J_s1, int NID1, int
 	}
 	//== get I_m2==;
 	I_m2 = (w_m2[0] + w_m2[1]) * 0.5 - (secItem[0] + secItem[1]) * 0.5 - (ThirItem[0] + ThirItem[1]) * 0.5;
+}
+
+void pdsolve::updateEnrichRegion(bool* ip_startPropage, datModel& o_dat)
+{
+	int totNumEle, algoType;
+	totNumEle = o_dat.getTotnumEle();
+	bool b_updated = false;
+	o_dat.cb_ERupdate = false;
+	//===update PDE;
+	o_dat.ci_oldNumPDE = o_dat.civ_pdeIDX.size();
+	for (int ck = 0; ck < o_dat.ci_numCrack; ck++)
+	{
+		if (ip_startPropage[ck])
+		{
+			updatePDEbyCrack(o_dat.cdp_crack[ck], o_dat); //some repeate PDE need to be removed;
+			b_updated = true;
+			o_dat.cb_ERupdate = true;
+		}
+	}
+
+	if (b_updated)
+	{
+		//update FE idx;
+		o_dat.civ_feIDX.clear();
+		for (int ele = 0; ele < o_dat.getTotnumEle(); ele++)
+		{
+			algoType = o_dat.op_getEles(ele)->getAlgoType();
+			if (algoType == 2)
+			{
+				o_dat.civ_feIDX.push_back(ele);
+			}
+		}
+		//update 
+		updatePDBE(o_dat);
+		UpdateNodeType(o_dat);
+		updatePDN_Fami(o_dat);
+		//need update CSR indexes==
+		setCSRIndexes_gloStiffMat(o_dat);
+	}
 }
 
 void pdsolve::updateBondstate(double crack[][3], datModel & o_dat)
@@ -6601,10 +8950,6 @@ void pdsolve::updateBondstate(double crack[][3], datModel & o_dat)
 	{
 		i_bIndexMin[2] = 0;
 		i_bIndexMax[2] = 0;
-	}
-	if (ci_rank==0)
-	{
-
 	}
 	for (int xIdex = i_bIndexMin[0] - 1; xIdex < i_bIndexMax[0] + 2; xIdex++)
 	{
