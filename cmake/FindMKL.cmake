@@ -6,9 +6,8 @@
 #  MKL_FOUND        - True if mkl found.
 #
 
-find_path(MKL_INCLUDE_DIR mkl_dfti.h HINTS $ENV{MKLROOT}/include)
+find_path(MKL_INCLUDE_DIR mkl.h HINTS $ENV{MKLROOT}/include)
 #find_path(FFTW_INCLUDE_DIR fftw.h HINTS $ENV{MKLROOT}/include/fftw)
-set(MKL_INCLUDE_DIR ${MKL_INCLUDE_DIR})
 #message(STAUS "==$ENV{MKLROOT}")
 
 if(WIN32)
@@ -23,7 +22,8 @@ elseif(UNIX)
     $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.so
     $ENV{MKLROOT}/lib/intel64/libmkl_core.so
     $ENV{MKLROOT}/lib/intel64/libmkl_blacs_openmpi_ilp64.so
-    $ENV{MKLROOT}/lib/intel64/libmkl_gnu_thread.so
+    $ENV{MKLROOT}/lib/intel64/libmkl_sequential.so
+    #$ENV{MKLROOT}/lib/intel64/libmkl_gnu_thread.so
     $ENV{MKLROOT}/lib/intel64/libmkl_rt.so)
    #find_library(MKL_LIBRARY NAMES mkl_rt  HINTS $ENV{MKLROOT}/lib $ENV{MKLROOT}/lib/intel64)
 endif()
