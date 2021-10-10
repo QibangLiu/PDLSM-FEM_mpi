@@ -43,6 +43,8 @@ fioFiles::fioFiles(int rank)
 		}
 #ifdef __linux__
 		mkdir(s_path, 777);
+#elif __APPLE__
+		mkdir(s_path, 777);
 #else
 		mkdir(s_path);
 #endif

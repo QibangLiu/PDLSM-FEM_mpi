@@ -17,15 +17,19 @@ if(WIN32)
     $ENV{MKLROOT}/lib/intel64/mkl_core.lib
     $ENV{MKLROOT}/lib/intel64/mkl_sequential.lib
     $ENV{MKLROOT}/lib/intel64/mkl_blacs_msmpi_ilp64.lib)
-elseif(UNIX)
+elseif(UNIX AND NOT APPLE)
     file(GLOB  MKL_LIBRARY 
     $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.so
     $ENV{MKLROOT}/lib/intel64/libmkl_core.so
     $ENV{MKLROOT}/lib/intel64/libmkl_blacs_openmpi_ilp64.so
-    $ENV{MKLROOT}/lib/intel64/libmkl_sequential.so
-    #$ENV{MKLROOT}/lib/intel64/libmkl_gnu_thread.so
-    $ENV{MKLROOT}/lib/intel64/libmkl_rt.so)
+    $ENV{MKLROOT}/lib/intel64/libmkl_sequential.so)
    #find_library(MKL_LIBRARY NAMES mkl_rt  HINTS $ENV{MKLROOT}/lib $ENV{MKLROOT}/lib/intel64)
+elseif(APPLE)
+    file(GLOB  MKL_LIBRARY 
+    $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.dylib
+    $ENV{MKLROOT}/lib/intel64/libmkl_sequential.dylib
+    $ENV{MKLROOT}/lib/intel64/libmkl_core.dylib
+    $ENV{MKLROOT}/lib/intel64/lmkl_blacs_mpich_ilp64.dylib)
 endif()
 
 set(MKL_LIBRARIES ${MKL_LIBRARY})

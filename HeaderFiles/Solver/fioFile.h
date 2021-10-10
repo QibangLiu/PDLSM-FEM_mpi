@@ -18,6 +18,10 @@ fils operations.  files for input and output
 #include <unistd.h>
 #include <sys/stat.h>
 #define _MAX_PATH	777
+#elif __APPLE__
+#include <unistd.h>
+#include <sys/stat.h>
+#define _MAX_PATH	777
 #endif
 
 
