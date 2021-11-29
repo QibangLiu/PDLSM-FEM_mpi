@@ -25,9 +25,10 @@ public:
 	vector<int>civ_NID;
 	int* cip_bondState;//bond state ;
 	bool cb_allowFail;
+	double cd_v;
 private: 
 	double cd_delta;
-	int ci_famID;
+	int ci_famID;//no need any more;
 	
 	
 };
