@@ -7,9 +7,6 @@ SOLVER DYNAMIC
 SETSOLVING 5e-7 1100  20  4  1.0
 # Newmark's method: ON or OFF; for dynamic solver; default is OFF;
 NEWMARK ON
-#FENSF ON/OFF; default is ON, FE node serve as PD family members or not.
-# For dynamic solving, we suggest to set it ON; for quasi/-static solving, it may only affect solving time cost, we suggest to set it OFF;
-FENSF ON
 # lumped mass: ON or OFF; for explicit dynamic solver; default is OFF:
 #LUMPMASS ON
 # reset essential boundary condition;

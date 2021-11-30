@@ -1385,8 +1385,9 @@ void pdsolve::updatePDBE(datModel& o_dat)
 					}
 					else
 					{
-						if ((*iter2)[2] != (*iter2)[3]&& (*iter1)[1] == (*iter2)[2]&& (*iter1)[2] == (*iter2)[1])
+						if ((*iter2)[2] == (*iter2)[3]&& (*iter1)[1] == (*iter2)[2]&& (*iter1)[2] == (*iter2)[1])
 						{
+							
 							b_gotit = true;
 							break;
 						}
@@ -6596,7 +6597,7 @@ double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream&
 	}
 	double maxVal = 0;
 	double rati = 1;
-	double tol = 1.0001;
+	double tol = 1.001;
 	if (o_dat.ci_failFlag == 1)
 	{
 		//1--maximum circumferential tensile stress;
@@ -6610,14 +6611,12 @@ double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream&
 		{
 			rati = tol * Kic / maxVal;
 		}
-		
 	}
 	else if (o_dat.ci_failFlag == 2)
 	{
 		//2-- maximum principal stress: return max stress;
 		maxVal = failureCriterion_maxPriSig(o_dat, Tk, addLoad);
 		double sig_ult= o_dat.op_getmaterial()->getSigult();
-		printf("maxVal %e, sigult %e\n", maxVal, sig_ult);
 		if (fabs(maxVal) < 1e-20 * sig_ult)
 		{
 			rati = 1;
@@ -6626,7 +6625,6 @@ double pdsolve::failureProcess(datModel& o_dat, int Tk, bool& addLoad, ofstream&
 		{
 			rati = tol * sig_ult / maxVal;
 		}
-		cout << "rati " << rati << endl;
 	}
 	//else if (o_dat.ci_failFlag == 3)
 	//{
@@ -7243,6 +7241,7 @@ double pdsolve::failureCriterion_maxPriSig(datModel& o_dat, int Tk, bool& addLoa
 				{
 					eigV[ii] = simga_priaxis->d_getCoeff(ii, maxIDX);
 				}*/
+				//printf("sigma1 %e\n", sigma1);
 				if (o_dat.ci_solvFlag != 1)//non-static solver
 				{
 					if (sigma1 > sigult)
@@ -7263,7 +7262,7 @@ double pdsolve::failureCriterion_maxPriSig(datModel& o_dat, int Tk, bool& addLoa
 						}
 					}
 				}
-				else//static solver
+				//else//static solver
 				{
 					if (sigma1 > sigma1_max)
 					{
@@ -7282,7 +7281,7 @@ double pdsolve::failureCriterion_maxPriSig(datModel& o_dat, int Tk, bool& addLoa
 	{
 		addLoad = Finally_TopK_andUpdate_bondStaus(o_dat, Tk, TopK,2);//flag==2
 	}
-	else if (o_dat.ci_solvFlag == 1)//static solver;
+	//else if (o_dat.ci_solvFlag == 1)//static solver;
 	{
 		MPI_Allreduce(&sigma1_max, &maxSig, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 	}

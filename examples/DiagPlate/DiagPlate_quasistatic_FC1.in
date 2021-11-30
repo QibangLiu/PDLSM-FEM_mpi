@@ -4,12 +4,9 @@ MSHFILE DiagPlate.lis
 SOLVER QUASI-STATIC
 # set solving for dynamic solver, for static solver, these cmd will be ignored
 # the order is: Keyword, time incremental, total time step, write results frequency, horizon factor, non-local factor;
-SETSOLVING 1 72  2  3  0.33
+SETSOLVING 1 54  2  3  0.33
 # Newmark's method: ON or OFF; for dynamic solver; default is OFF;
 NEWMARK OFF
-#FENSF ON/OFF; default is ON, FE node serve as PD family members or not.
-# For dynamic solving, we suggest to set it ON; for quasi/-static solving, it may only affect solving time cost
-FENSF OFF
 # lumped mass: ON or OFF; Only available for explicit dynamic solver; default is OFF:
 #LUMPMASS ON
 # reset essential boundary condition;
@@ -18,8 +15,8 @@ EBC 0  0e-5
 EBC 1  0e-5
 # varing essential boundary condition; 
 # the order is: Keyword, ID, velocity. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
-VEBC 0 -8.445e-5
-VEBC 1  8.445e-5
+VEBC 0 -8.0e-5
+VEBC 1  8.0e-5
 # reset natural BC; 
 # the order is: Keyword, ID, value. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
 #NBC 0  1e6
@@ -33,7 +30,7 @@ VEBC 1  8.445e-5
 #FC 1 mr dcf, ( mr, dcf are optional)
 #the mr is to determins the integral path of J-integra, default is 6.0;  dcf is determine crack grow amount, default is 1.0
 #FC 2 TopK, TopK represents the number of k bonds with the largest value will be handled fail; k==0 means no limitation.
-FC 1 6 0.5
+FC 1 6 1.0
 # calculate total reaction force: keyword, ID0, ID1, ID2.... The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
 RF 1
 #write vtk file with format BINARY or ASCII; default is BINARY;

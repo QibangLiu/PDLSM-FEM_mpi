@@ -31,7 +31,7 @@ PD theory has been extended from bond-based theory [@silling2000reformulation], 
 
 PDLSM-FEM solver is user friendly and can solve the structures with uniform or non-uniform mesh much faster and save much memory usage comparing to the pure PD model. It does not require surface correction [@le_surface_2018] and volume correction [@seleson_improved_2014] as many published PD models are required. In many published PD theories, constraints are applied through a nonzero volume rather than on a surface, commonly introduced within a fictitious layer [@hu_formulation_2012], and traction at boundaries is introduced in these PD models as body forces within a layer [@madenci_peridynamic_2014]. In the PDLSM-FEM solver, the constraints and traction boundary conditions (BCs) are treated in an easy way as same as FEM, rather than by introducing a fictitious layer. The PDLSM-FEM solver enables 2 criteria for 2D crack propagation simulations: maximum circumferential tensile stress and maximum principal stress.
 
-# Examples
+# Usage and features
 
 PDLSM-FEM is developed to perform fracture analysis of structures, which takes advantage of both PD and FEM. It also can be used to perform conventional finite element analysis, when the PD region of the model is shrunk to zero, which means there is no PD element.
 \autoref{fig:diag} illustrates the crack propagation simulation of a diagonal plate with an inclined pre-existing crack by the PDLSM-FEM solver. As it shows, PDLSM-FEM solver captures the crack growth path which has a good agreement with the experimental observation [@ayatollahi_analysis_2009]. The geometry and material properties of this example can be found in [@liu_simulating_2021].

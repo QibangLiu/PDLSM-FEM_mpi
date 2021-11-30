@@ -12,7 +12,6 @@ if(WIN32)
 elseif(UNIX)
    find_path(MPI_INCLUDE_DIR mpi.h HINTS $ENV{MPIROOT}/include)
 endif()
-
 #============find libraries
 if(WIN32)
    find_library(MPI_LIBRARY NAMES msmpi.lib  HINTS $ENV{MPIROOT}/Lib/x64)

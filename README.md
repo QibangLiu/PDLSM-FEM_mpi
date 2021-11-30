@@ -12,7 +12,7 @@ See the [manual](https://github.com/QibangLiu/PDLSM-FEM_mpi/blob/master/PDLSM_FE
 
 # Examples
 
-| <img src="examples\DiagPlate\diagPlateUY.gif" width="400"> | <img src="examples\DiagPlate\diagPlateSY.gif" width="400"> | 
+| <img src="examples\DiagPlate\diagPlateUY_FC1.gif" width="400"> | <img src="examples\DiagPlate\diagPlateSY_FC2.gif" width="400"> | 
 | :---: | :---: | 
 | [Displacement UY of diagonal plate]| [Stress SY of diagonal plate]|
 
@@ -28,9 +28,9 @@ Qibang Liu, qibangliu@ksu.edu
 Dept. of Mechanical & Nuclear Engineering, Kansas State University.
 
 # References
-  Liu, Q., Xin, X. J., Ma, J., & Wang, Y. (2021). Simulating quasi-static crack propagation by coupled peridynamics least square minimization with finite element method. Engineering Fracture Mechanics, 252, 107862. https://doi.org/10.1016/j.engfracmech.2021.107862
+  * Liu, Q., Xin, X. J., Ma, J., & Wang, Y. (2021). Simulating quasi-static crack propagation by coupled peridynamics least square minimization with finite element method. Engineering Fracture Mechanics, 252, 107862. https://doi.org/10.1016/j.engfracmech.2021.107862
 
-  Liu, Q., Xin, X. J., & Ma, J. (2021). Coupled Peridynamics Least Square Minimization with Finite Element Method in 3D and Implicit Solutions by Message Passing Interface. Journal of Peridynamics and Nonlocal Modeling. https://doi.org/10.1007/s42102-021-00060-3
+  * Liu, Q., Xin, X. J., & Ma, J. (2021). Coupled Peridynamics Least Square Minimization with Finite Element Method in 3D and Implicit Solutions by Message Passing Interface. Journal of Peridynamics and Nonlocal Modeling. https://doi.org/10.1007/s42102-021-00060-3  (view-only version: https://rdcu.be/cxhbs)
 
 
 

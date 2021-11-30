@@ -4,12 +4,9 @@ MSHFILE DCT.lis
 SOLVER QUASI-STATIC
 # set solving for dynamic solver, for static solver, these cmd will be ignored
 # the order is: Keyword, time incremental, total time step, write results frequency, horizon factor, non-local factor;
-SETSOLVING 1 72  2  4  0.25
+SETSOLVING 1 136  4  4  0.25
 # Newmark's method: ON or OFF; for dynamic solver; default is OFF;
 #NEWMARK ON
-#FENSF ON/OFF; default is ON, FE node serve as PD family members or not.
-# For dynamic solving, we suggest to set it ON; for quasi/-static solving, it may only affect solving time cost, we suggest to set it OFF;
-FENSF OFF
 # lumped mass: ON or OFF; for explicit dynamic solver; default is OFF:
 #LUMPMASS ON
 # reset essential boundary condition;
@@ -18,8 +15,8 @@ EBC 0  0e-5
 EBC 1  0e-5
 # varing essential boundary condition; 
 # the order is: Keyword, ID, velocity. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
-VEBC 0 -2.506e-6
-VEBC 1  2.506e-6
+VEBC 0 -2.5e-6
+VEBC 1  2.5e-6
 # reset natural BC; 
 # the order is: Keyword, ID, value. The ID is 0, 1 ..., which is correspond to the EBC in mesh file.
 #NBC 0  1e6
