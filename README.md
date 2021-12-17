@@ -32,5 +32,5 @@ Dept. of Mechanical & Nuclear Engineering, Kansas State University.
 
   * Liu, Q., Xin, X. J., & Ma, J. (2021). Coupled Peridynamics Least Square Minimization with Finite Element Method in 3D and Implicit Solutions by Message Passing Interface. Journal of Peridynamics and Nonlocal Modeling. https://doi.org/10.1007/s42102-021-00060-3  (view-only version: https://rdcu.be/cxhbs)
 
-
+ * Liu, Q., Xin, X. J. (2021). PDLSM-FEM: Solver of Coupled Peridynamics Least Squares Minimization with Finite Element Method. Journal of Open Source Software, 6(68), 3668, [![DOI](https://joss.theoj.org/papers/10.21105/joss.03668/status.svg)](https://doi.org/10.21105/joss.03668)
 
